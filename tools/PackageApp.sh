@@ -7,6 +7,7 @@ RESOURCES="$APP/Contents/Resources"
 ICON="$ROOT/Resources/ClaudeDual.icns"
 ICONSET="$RESOURCES/ClaudeDual.iconset"
 
+rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$RESOURCES"
 
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
@@ -30,10 +31,25 @@ fi
 cp "$ICON" "$RESOURCES/ClaudeDual.icns"
 cp "$ROOT/Resources/proxy_server.py" "$RESOURCES/proxy_server.py"
 
-swiftc -parse-as-library \
-  -module-cache-path /private/tmp/claude-dual-swift-module-cache \
-  "$ROOT/ClaudeDualApp.swift" \
-  -o "$APP/Contents/MacOS/ClaudeDual"
+BIN="$APP/Contents/MacOS/ClaudeDual"
+CACHE="/private/tmp/claude-dual-swift-module-cache"
+DEPLOY_TARGET="13.0"
+
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+  # Build a universal binary so both Apple Silicon and Intel Macs can run it.
+  swiftc -parse-as-library -module-cache-path "$CACHE" \
+    -target "arm64-apple-macos$DEPLOY_TARGET" \
+    "$ROOT/ClaudeDualApp.swift" -o "$BIN.arm64"
+  swiftc -parse-as-library -module-cache-path "$CACHE" \
+    -target "x86_64-apple-macos$DEPLOY_TARGET" \
+    "$ROOT/ClaudeDualApp.swift" -o "$BIN.x86_64"
+  lipo -create "$BIN.arm64" "$BIN.x86_64" -output "$BIN"
+  rm -f "$BIN.arm64" "$BIN.x86_64"
+else
+  swiftc -parse-as-library -module-cache-path "$CACHE" \
+    "$ROOT/ClaudeDualApp.swift" -o "$BIN"
+fi
 
 plutil -lint "$APP/Contents/Info.plist"
 echo "Built $APP"
+lipo -info "$BIN" 2>/dev/null || true
