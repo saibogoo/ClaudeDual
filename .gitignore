@@ -1,0 +1,29 @@
+# Build artifacts
+ClaudeDual
+ClaudeDual.app/
+ClaudeDual.dmg
+Claude-Kimi
+claude-script.app/
+
+# Config with hardcoded API keys
+configLibrary/
+
+# OS files
+.DS_Store
+*.swp
+
+# IDE / AI tools
+.idea/
+.claude/
+*.xcodeproj/
+*.xcworkspace/
+.qoder/
+
+# Screenshots
+????????-????-????-????-????????????.png
+
+# Temporary
+*.tmp
+*.log
+__pycache__/
+*.pyc
