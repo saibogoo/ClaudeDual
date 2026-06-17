@@ -61,8 +61,7 @@ The app generates and writes configuration files to the isolated instance's `con
   "inferenceModels": [
     "claude-sonnet-4-6",
     "claude-opus-4-7",
-    "claude-haiku-4-5",
-    "claude-opus-4-7[1m]"
+    "claude-haiku-4-5"
   ]
 }
 ```

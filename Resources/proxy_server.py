@@ -56,7 +56,6 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             "claude-sonnet-4-6",
             "claude-opus-4-7",
             "claude-haiku-4-5",
-            "claude-opus-4-7[1m]",
         ]
         self._send_json(200, {
             "object": "list",

@@ -22,8 +22,7 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
     static let defaultInferenceModels = [
         "claude-sonnet-4-6",
         "claude-opus-4-7",
-        "claude-haiku-4-5",
-        "claude-opus-4-7[1m]"
+        "claude-haiku-4-5"
     ]
 
     static func makeDefault() -> ConfigProfile {
