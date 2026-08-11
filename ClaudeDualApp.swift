@@ -20,9 +20,14 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
     static let defaultUpstreamModel = "provider-default-model"
     static let defaultCcSwitchUrl = "http://127.0.0.1:15721"
     static let defaultInferenceModels = [
-        "claude-sonnet-4-6",
+        "claude-fable-5",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-8",
         "claude-opus-4-7",
-        "claude-haiku-4-5"
+        "claude-opus-4-6",
+        "claude-sonnet-4-6"
     ]
 
     static func makeDefault() -> ConfigProfile {
@@ -83,10 +88,10 @@ enum LogType {
 
     var color: Color {
         switch self {
-        case .success: return .green
-        case .error: return .red
-        case .warning: return .orange
-        case .info: return .blue
+        case .success: return AppTheme.success
+        case .error: return AppTheme.danger
+        case .warning: return AppTheme.warning
+        case .info: return AppTheme.info
         }
     }
 
@@ -116,7 +121,7 @@ struct ClaudeDualApp: App {
             ContentView()
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 860, height: 580)
+        .defaultSize(width: 1120, height: 720)
     }
 }
 
@@ -135,6 +140,99 @@ enum AppTab: String, CaseIterable {
         case .logs: return "doc.text.below.ecg"
         case .about: return "info.circle"
         }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .status: return "运行概览"
+        case .configuration: return "模型与网关"
+        case .logs: return "运行记录"
+        case .about: return "版本信息"
+        }
+    }
+}
+
+// MARK: - Visual System
+
+enum AppTheme {
+    static let canvas = adaptive(light: rgb(250, 249, 246), dark: rgb(29, 28, 26))
+    static let sidebar = adaptive(light: rgb(242, 239, 234), dark: rgb(38, 36, 33))
+    static let surface = adaptive(light: rgb(255, 255, 255), dark: rgb(41, 39, 36))
+    static let surfaceSoft = adaptive(light: rgb(251, 250, 248), dark: rgb(37, 35, 32))
+    static let ink = adaptive(light: rgb(28, 27, 25), dark: rgb(242, 238, 231))
+    static let inkSecondary = adaptive(light: rgb(74, 70, 62), dark: rgb(209, 203, 192))
+    static let muted = adaptive(light: rgb(138, 133, 124), dark: rgb(159, 153, 143))
+    static let border = adaptive(light: rgb(231, 226, 217), dark: rgb(58, 55, 50))
+    static let borderSoft = adaptive(light: rgb(241, 237, 230), dark: rgb(52, 49, 45))
+    static let danger = adaptive(light: rgb(214, 58, 63), dark: rgb(255, 105, 109))
+    static let success = adaptive(light: rgb(18, 161, 80), dark: rgb(85, 201, 130))
+    static let focus = adaptive(light: rgb(10, 108, 255), dark: rgb(101, 167, 255))
+    static let info = focus
+    static let warning = adaptive(light: rgb(232, 137, 12), dark: rgb(242, 163, 60))
+    static let accent = adaptive(light: rgb(138, 61, 15), dark: rgb(240, 174, 117))
+    static let accentSoft = adaptive(light: rgb(237, 231, 220), dark: rgb(64, 57, 48))
+
+    private static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+        NSColor(srgbRed: red / 255, green: green / 255, blue: blue / 255, alpha: 1)
+    }
+
+    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
+}
+
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "亮色"
+        case .dark: return "暗色"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+struct AppCard: ViewModifier {
+    var cornerRadius: CGFloat = 10
+    var borderColor: Color = AppTheme.border
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(AppTheme.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+    }
+}
+
+extension View {
+    func appCard(cornerRadius: CGFloat = 10, borderColor: Color = AppTheme.border) -> some View {
+        modifier(AppCard(cornerRadius: cornerRadius, borderColor: borderColor))
     }
 }
 
@@ -1061,36 +1159,32 @@ struct ContentView: View {
     @StateObject private var manager = ClaudeDualManager()
     @State private var selectedTab: AppTab = .status
     @State private var timer: Timer?
+    @AppStorage("appearancePreference") private var appearancePreference = AppAppearance.system.rawValue
 
     var body: some View {
-        NSLog("[CD] ContentView.body building, selectedTab=\(selectedTab.rawValue)")
-        let _ = NSLog("[CD] ContentView.body: profiles=\(manager.profiles.count), active=\(manager.activeProfileId?.uuidString ?? "nil")")
-        return TabView(selection: $selectedTab) {
-            StatusTab(manager: manager)
-                .tabItem {
-                    Label(AppTab.status.rawValue, systemImage: AppTab.status.icon)
-                }
-                .tag(AppTab.status)
+        HStack(spacing: 0) {
+            AppSidebar(selectedTab: $selectedTab, appearancePreference: $appearancePreference, manager: manager)
 
-            ConfigurationTab(manager: manager)
-                .tabItem {
-                    Label(AppTab.configuration.rawValue, systemImage: AppTab.configuration.icon)
-                }
-                .tag(AppTab.configuration)
+            Divider()
 
-            LogsTab(manager: manager)
-                .tabItem {
-                    Label(AppTab.logs.rawValue, systemImage: AppTab.logs.icon)
+            Group {
+                switch selectedTab {
+                case .status:
+                    StatusTab(manager: manager)
+                case .configuration:
+                    ConfigurationTab(manager: manager)
+                case .logs:
+                    LogsTab(manager: manager)
+                case .about:
+                    AboutTab()
                 }
-                .tag(AppTab.logs)
-
-            AboutTab()
-                .tabItem {
-                    Label(AppTab.about.rawValue, systemImage: AppTab.about.icon)
-                }
-                .tag(AppTab.about)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(AppTheme.canvas)
         }
-        .frame(minWidth: 860, minHeight: 580)
+        .tint(AppTheme.focus)
+        .preferredColorScheme(AppAppearance(rawValue: appearancePreference)?.colorScheme)
+        .frame(minWidth: 1040, minHeight: 680)
         .onAppear {
             NSLog("[CD] ContentView.onAppear")
             manager.refreshStatus()
@@ -1107,101 +1201,227 @@ struct ContentView: View {
     }
 }
 
+struct AppSidebar: View {
+    @Binding var selectedTab: AppTab
+    @Binding var appearancePreference: String
+    @ObservedObject var manager: ClaudeDualManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 38, height: 38)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ClaudeDual")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                    Text("Desktop Console")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 20)
+            .padding(.bottom, 22)
+
+            Text("工作台")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 5) {
+                ForEach(AppTab.allCases, id: \.rawValue) { tab in
+                    SidebarItem(tab: tab, isSelected: selectedTab == tab) {
+                        selectedTab = tab
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+
+            Spacer()
+
+            Menu {
+                ForEach(AppAppearance.allCases) { appearance in
+                    Button(action: { appearancePreference = appearance.rawValue }) {
+                        Label(appearance.title, systemImage: appearancePreference == appearance.rawValue ? "checkmark" : appearance.icon)
+                    }
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: currentAppearance.icon)
+                        .frame(width: 18)
+                    Text("外观")
+                        .font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text(currentAppearance.title)
+                        .font(.system(size: 10))
+                        .foregroundColor(AppTheme.muted)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(AppTheme.muted)
+                }
+                .padding(.horizontal, 11)
+                .frame(height: 34)
+                .background(AppTheme.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+            }
+            .menuStyle(.borderlessButton)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
+
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(manager.isInstanceRunning ? AppTheme.success : Color.secondary.opacity(0.45))
+                    .frame(width: 8, height: 8)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(manager.isInstanceRunning ? "隔离实例运行中" : "隔离实例未运行")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(manager.activeProfile?.name ?? "尚未选择配置")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(AppTheme.surface.opacity(0.56), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(AppTheme.borderSoft, lineWidth: 1))
+            .padding(12)
+        }
+        .frame(width: 216)
+        .background(AppTheme.sidebar.opacity(0.88))
+    }
+
+    private var currentAppearance: AppAppearance {
+        AppAppearance(rawValue: appearancePreference) ?? .system
+    }
+}
+
+struct SidebarItem: View {
+    let tab: AppTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 22)
+                Text(tab.rawValue)
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+            }
+            .foregroundColor(isSelected ? AppTheme.accent : AppTheme.ink)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 36, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? AppTheme.accentSoft : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct PageHeader<Trailing: View>: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(eyebrow)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(AppTheme.accent)
+                Text(title)
+                    .font(.system(size: 22, weight: .bold))
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            trailing
+        }
+    }
+}
+
 // MARK: - Status Tab
 
 struct StatusTab: View {
     @ObservedObject var manager: ClaudeDualManager
 
     var body: some View {
-        let _ = NSLog("[CD] StatusTab.body building")
-        VStack(spacing: 20) {
-            HStack {
-                Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                PageHeader(
+                    eyebrow: "工作台",
+                    title: "运行概览",
+                    subtitle: "查看 Claude Desktop、隔离实例与代理服务的实时状态"
+                ) {
+                    HStack(spacing: 8) {
+                        Button(action: manager.openDataDir) {
+                            Label("数据目录", systemImage: "folder")
+                        }
+                        .buttonStyle(.bordered)
 
-                Button(action: {
-                    manager.openDataDir()
-                }) {
-                    Label("打开数据目录", systemImage: "folder")
-                        .font(.system(size: 13, weight: .medium))
+                        Button(action: manager.refreshStatus) {
+                            Image(systemName: "arrow.clockwise")
+                                .frame(width: 16, height: 16)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(manager.isInstanceStarting || manager.isInstanceStopping)
+                        .help("刷新状态")
+                    }
                 }
-                .buttonStyle(.bordered)
 
-                Button(action: {
-                    manager.refreshStatus()
-                }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(width: 18, height: 18)
-                }
-                .buttonStyle(.bordered)
-                .disabled(manager.isInstanceStarting || manager.isInstanceStopping)
-                .help("刷新状态")
-            }
-            .padding(.horizontal)
-
-            HStack(spacing: 12) {
                 DeveloperModeStatusCard(manager: manager)
-                    .frame(width: 320)
 
                 HStack(spacing: 12) {
                     StatusCard(
                         title: "Claude Desktop",
                         subtitle: manager.isClaudeInstalled ? "已安装" : "未安装",
                         icon: "macwindow",
-                        color: manager.isClaudeInstalled ? Color(red: 0.2, green: 0.7, blue: 0.3) : Color(red: 0.9, green: 0.2, blue: 0.2)
+                        color: manager.isClaudeInstalled ? AppTheme.success : AppTheme.danger,
+                        detail: manager.isClaudeInstalled ? "应用已就绪" : "请先安装应用"
                     )
 
                     StatusCard(
                         title: "隔离实例",
                         subtitle: instanceStatusText,
-                        icon: manager.isInstanceStarting || manager.isInstanceStopping ? "hourglass" : "cpu.fill",
+                        icon: manager.isInstanceStarting || manager.isInstanceStopping ? "hourglass" : "cpu",
                         color: instanceStatusColor,
-                        detail: manager.isInstanceRunning ? "PID: \(manager.instancePID)" : nil
+                        detail: manager.isInstanceRunning ? "PID \(manager.instancePID)" : "等待启动"
                     )
 
                     StatusCard(
-                        title: "代理服务器",
-                        subtitle: {
-                            if let activeProfile = manager.activeProfile, activeProfile.isCcSwitchMode {
-                                return "CC-Switch 模式"
-                            } else {
-                                return manager.isProxyRunning ? "运行中" : "未运行"
-                            }
-                        }(),
-                        icon: "arrow.left.arrow.right.circle.fill",
-                        color: {
-                            if let activeProfile = manager.activeProfile, activeProfile.isCcSwitchMode {
-                                return Color(red: 0.2, green: 0.6, blue: 0.9) // Blue for CC-Switch mode
-                            } else {
-                                return manager.isProxyRunning ? Color(red: 0.2, green: 0.7, blue: 0.3) : Color.gray
-                            }
-                        }(),
-                        detail: {
-                            if let activeProfile = manager.activeProfile, activeProfile.isCcSwitchMode {
-                                return "地址: \(activeProfile.effectiveCcSwitchUrl)"
-                            } else {
-                                return "端口: \(manager.proxyPort)"
-                            }
-                        }()
+                        title: "代理服务",
+                        subtitle: proxyStatusText,
+                        icon: "arrow.triangle.2.circlepath",
+                        color: proxyStatusColor,
+                        detail: proxyDetail
+                    )
+                }
+
+                if let profile = manager.activeProfile {
+                    ActiveProfileCard(
+                        profile: profile,
+                        manager: manager,
+                        instanceStatusText: instanceStatusText,
+                        instanceStatusColor: instanceStatusColor
                     )
                 }
             }
-            .frame(height: 150)
-            .padding(.horizontal)
-
-            if let profile = manager.activeProfile {
-                ActiveProfileCard(
-                    profile: profile,
-                    manager: manager,
-                    instanceStatusText: instanceStatusText,
-                    instanceStatusColor: instanceStatusColor
-                )
-                .padding(.horizontal)
-            }
-
-            Spacer()
+            .padding(28)
         }
-        .padding(.vertical, 20)
     }
 
     private var instanceStatusText: String {
@@ -1211,8 +1431,25 @@ struct StatusTab: View {
     }
 
     private var instanceStatusColor: Color {
-        if manager.isInstanceStarting || manager.isInstanceStopping { return .orange }
-        return manager.isInstanceRunning ? Color(red: 0.2, green: 0.7, blue: 0.3) : Color.gray
+        if manager.isInstanceStarting || manager.isInstanceStopping { return AppTheme.warning }
+        return manager.isInstanceRunning ? AppTheme.success : Color.secondary
+    }
+
+    private var proxyStatusText: String {
+        if manager.activeProfile?.isCcSwitchMode == true { return "CC-Switch" }
+        return manager.isProxyRunning ? "运行中" : "未运行"
+    }
+
+    private var proxyStatusColor: Color {
+        if manager.activeProfile?.isCcSwitchMode == true { return AppTheme.info }
+        return manager.isProxyRunning ? AppTheme.success : Color.secondary
+    }
+
+    private var proxyDetail: String {
+        if let profile = manager.activeProfile, profile.isCcSwitchMode {
+            return profile.effectiveCcSwitchUrl
+        }
+        return "本地端口 \(manager.proxyPort)"
     }
 }
 
@@ -1225,48 +1462,40 @@ struct ActiveProfileCard: View {
     let instanceStatusColor: Color
 
     var body: some View {
-        HStack(alignment: .center, spacing: 18) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
+        HStack(alignment: .center, spacing: 22) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 9) {
                     Image(systemName: "checkmark.shield.fill")
-                        .foregroundColor(successColor)
-                    Text("当前激活配置")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppTheme.accent)
+                    Text("当前配置")
+                        .font(.system(size: 15, weight: .bold))
                     Text(instanceStatusText)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(instanceStatusColor)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                         .background(instanceStatusColor.opacity(0.14), in: Capsule())
                 }
 
-                InfoRow(label: "名称", value: profile.name)
-                InfoRow(label: "代理模式", value: profile.isCcSwitchMode ? "CC Switch" : "本地代理")
-                if profile.isCcSwitchMode {
-                    InfoRow(label: "CC Switch", value: profile.effectiveCcSwitchUrl)
-                } else {
-                    InfoRow(label: "上游模型", value: profile.effectiveUpstreamModel)
-                    InfoRow(label: "真实 API", value: profile.effectiveApiBaseUrl)
-                    InfoRow(label: "API Key", value: profile.maskedApiKey)
+                HStack(alignment: .top, spacing: 24) {
+                    ProfileInfoBlock(label: "配置名称", value: profile.name)
+                    ProfileInfoBlock(label: "代理模式", value: profile.isCcSwitchMode ? "CC Switch" : "本地代理")
+                    ProfileInfoBlock(
+                        label: profile.isCcSwitchMode ? "网关地址" : "上游模型",
+                        value: profile.isCcSwitchMode ? profile.effectiveCcSwitchUrl : profile.effectiveUpstreamModel
+                    )
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
-                .frame(height: 86)
+                .frame(height: 72)
 
             primaryAction
         }
-        .padding(18)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
-        )
+        .padding(20)
+        .appCard(borderColor: AppTheme.accent.opacity(0.18))
     }
 
     @ViewBuilder
@@ -1275,7 +1504,8 @@ struct ActiveProfileCard: View {
             CompactActionButton(
                 title: manager.isInstanceStopping ? "停止中" : "停止",
                 icon: manager.isInstanceStopping ? "hourglass" : "stop.fill",
-                color: Color(red: 0.9, green: 0.2, blue: 0.2),
+                color: AppTheme.danger,
+                isDestructive: true,
                 isLoading: manager.isInstanceStopping,
                 disabled: !manager.isInstanceRunning || manager.isInstanceStarting || manager.isInstanceStopping
             ) {
@@ -1285,7 +1515,7 @@ struct ActiveProfileCard: View {
             CompactActionButton(
                 title: manager.isInstanceStarting ? "启动中" : "启动",
                 icon: manager.isInstanceStarting ? "hourglass" : "play.fill",
-                color: .accentColor,
+                color: AppTheme.ink,
                 isLoading: manager.isInstanceStarting,
                 disabled: manager.isInstanceStarting || manager.isInstanceStopping || !manager.isClaudeInstalled || !manager.isDeveloperModeEnabled
             ) {
@@ -1294,8 +1524,23 @@ struct ActiveProfileCard: View {
         }
     }
 
-    private var successColor: Color {
-        Color(red: 0.2, green: 0.7, blue: 0.3)
+}
+
+struct ProfileInfoBlock: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1303,6 +1548,7 @@ struct CompactActionButton: View {
     let title: String
     let icon: String
     let color: Color
+    var isDestructive: Bool = false
     var isLoading: Bool = false
     var disabled: Bool = false
     let action: () -> Void
@@ -1318,11 +1564,18 @@ struct CompactActionButton: View {
                         .font(.system(size: 20, weight: .semibold))
                 }
                 Text(title)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
             }
-            .foregroundColor(.white)
-            .frame(width: 132, height: 58)
-            .background(disabled ? color.opacity(0.45) : color, in: RoundedRectangle(cornerRadius: 12))
+            .foregroundColor(isDestructive ? color : AppTheme.surface)
+            .frame(width: 122, height: 46)
+            .background(
+                isDestructive ? color.opacity(disabled ? 0.04 : 0.08) : color.opacity(disabled ? 0.38 : 1),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isDestructive ? color.opacity(disabled ? 0.12 : 0.34) : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1339,37 +1592,38 @@ struct StatusCard: View {
     var detail: String? = nil
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(color.opacity(0.35), lineWidth: 1)
-
-            VStack(spacing: 6) {
+        HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(color.opacity(0.12))
                 Image(systemName: icon)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 19, weight: .semibold))
                     .foregroundColor(color)
-                    .symbolRenderingMode(.monochrome)
-                    .frame(width: 32, height: 32)
+            }
+            .frame(width: 44, height: 44)
 
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.caption)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
-
                 Text(subtitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(color)
-
+                    .font(.system(size: 14, weight: .bold))
                 if let detail = detail {
                     Text(detail)
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.middle)
                 }
             }
-            .padding(.vertical, 10)
+            Spacer(minLength: 0)
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(15)
+        .frame(maxWidth: .infinity, minHeight: 78)
+        .appCard(cornerRadius: 10, borderColor: AppTheme.border)
     }
 }
 
@@ -1377,68 +1631,48 @@ struct DeveloperModeStatusCard: View {
     @ObservedObject var manager: ClaudeDualManager
 
     private var statusColor: Color {
-        manager.isDeveloperModeEnabled ? Color(red: 0.2, green: 0.7, blue: 0.3) : Color.orange
+        manager.isDeveloperModeEnabled ? AppTheme.success : AppTheme.warning
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(statusColor.opacity(0.14))
-                    Image(systemName: manager.isDeveloperModeEnabled ? "checkmark.shield.fill" : "hammer.fill")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(statusColor)
-                        .symbolRenderingMode(.monochrome)
-                }
-                .frame(width: 48, height: 48)
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(statusColor.opacity(0.12))
+                Image(systemName: manager.isDeveloperModeEnabled ? "checkmark.shield.fill" : "hammer.fill")
+                    .font(.system(size: 23, weight: .semibold))
+                    .foregroundColor(statusColor)
+            }
+            .frame(width: 54, height: 54)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("开发者模式")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    Text(manager.isDeveloperModeEnabled ? "已开启" : "未开启")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(statusColor)
-                }
-
-                Spacer()
+            VStack(alignment: .leading, spacing: 5) {
+                Text("开发者模式")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                Text(manager.isDeveloperModeEnabled ? "环境已就绪" : "需要初始化")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                Text(manager.isConfigured ? "第三方模型配置已就绪，可直接启动隔离实例" : "创建隔离数据目录并初始化网关配置")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
             }
 
-            Text(manager.isConfigured ? "第三方模型配置已就绪" : "创建 ClaudeDual-3p 并初始化网关配置")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(2)
+            Spacer()
 
-            Button(action: {
-                manager.enableDeveloperMode()
-            }) {
-                HStack(spacing: 9) {
-                    Image(systemName: manager.isDeveloperModeEnabled ? "checkmark" : "power")
-                        .font(.system(size: 18, weight: .bold))
-                    Text(manager.isDeveloperModeEnabled ? "已开启" : "一键开启开发者模式")
-                        .font(.system(size: 16, weight: .bold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(manager.isDeveloperModeEnabled ? statusColor.opacity(0.72) : Color.accentColor)
-                )
+            Button(action: manager.enableDeveloperMode) {
+                Label(manager.isDeveloperModeEnabled ? "已开启" : "一键开启", systemImage: manager.isDeveloperModeEnabled ? "checkmark" : "power")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 120, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(manager.isDeveloperModeEnabled ? statusColor.opacity(0.68) : AppTheme.ink)
+                    )
             }
             .buttonStyle(.plain)
             .disabled(manager.isDeveloperModeEnabled || manager.isInstanceStarting || manager.isInstanceStopping)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(statusColor.opacity(0.3), lineWidth: 1)
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(18)
+        .appCard(borderColor: AppTheme.border)
     }
 }
 
@@ -1495,29 +1729,57 @@ struct ConfigurationTab: View {
     }
 
     var body: some View {
-        let _ = NSLog("[CD] ConfigurationTab.body building, profiles=\(manager.profiles.count)")
-        HStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 18) {
+            PageHeader(
+                eyebrow: "配置管理",
+                title: "推理配置",
+                subtitle: "管理模型网关、认证方式与代理连接"
+            ) {
+                Button(action: {
+                    isNewProfile = true
+                    selectedProfileId = nil
+                }) {
+                    Label("新建配置", systemImage: "plus")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(AppTheme.surface)
+                        .padding(.horizontal, 13)
+                        .frame(height: 32)
+                        .background(AppTheme.ink, in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 0) {
             // Left: Profile List
             VStack(spacing: 0) {
                 HStack {
-                    Text("配置列表")
-                        .font(.headline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("配置列表")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("\(manager.profiles.count) 个配置")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
                     Spacer()
                     Button(action: {
                         isNewProfile = true
                         selectedProfileId = nil
                     }) {
                         Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 26)
+                            .background(AppTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
+                    .foregroundColor(AppTheme.accent)
                     .help("新建配置")
                 }
-                .padding()
+                .padding(14)
 
                 Divider()
 
                 ScrollView {
-                    LazyVStack(spacing: 2) {
+                    LazyVStack(spacing: 6) {
                         ForEach(manager.profiles) { profile in
                             ProfileRow(
                                 profile: profile,
@@ -1547,11 +1809,11 @@ struct ConfigurationTab: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(9)
                 }
             }
-            .frame(width: 220)
+            .frame(width: 210)
+            .background(AppTheme.surface.opacity(0.48))
 
             Divider()
 
@@ -1610,7 +1872,11 @@ struct ConfigurationTab: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            }
+            .appCard(cornerRadius: 10)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+        .padding(28)
         .onAppear {
             if selectedProfileId == nil && !isNewProfile {
                 selectedProfileId = manager.activeProfileId ?? manager.profiles.first?.id
@@ -1628,29 +1894,40 @@ struct ProfileRow: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isSelected ? Color.blue.opacity(0.12) : Color.clear)
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isActive ? Color(red: 0.2, green: 0.7, blue: 0.3).opacity(0.4) : Color.clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? AppTheme.accent.opacity(0.11) : Color.clear)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isSelected ? AppTheme.accent.opacity(0.28) : Color.clear, lineWidth: 1)
 
-            HStack(spacing: 8) {
-                Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(isActive ? Color(red: 0.2, green: 0.7, blue: 0.3) : Color.gray)
-                    .font(.system(size: 14))
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(isActive ? AppTheme.success.opacity(0.14) : Color.secondary.opacity(0.09))
+                    Image(systemName: isActive ? "checkmark" : "network")
+                        .foregroundColor(isActive ? AppTheme.success : .secondary)
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .frame(width: 28, height: 28)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(profile.name)
-                        .font(.system(size: 13, weight: .medium))
-                    Text(profile.effectiveUpstreamModel)
-                        .font(.system(size: 11))
-                        .foregroundColor(Color.gray)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(profile.isCcSwitchMode ? "CC Switch" : profile.effectiveUpstreamModel)
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
 
                 Spacer()
+
+                if isSelected {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(AppTheme.accent)
+                }
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
         }
     }
 }
@@ -1681,8 +1958,13 @@ struct ProfileEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     HStack {
-                        Text(isNew ? "新建配置" : "编辑配置")
-                            .font(.title3.bold())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(isNew ? "新建配置" : "编辑配置")
+                                .font(.system(size: 18, weight: .bold, design: .rounded))
+                            Text(isNew ? "填写连接信息并创建新的推理环境" : "修改当前配置的网关与认证参数")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
                         Spacer()
                         if let cancel = onCancel {
                             Button("取消", action: cancel)
@@ -1691,147 +1973,17 @@ struct ProfileEditor: View {
                         }
                     }
 
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 14) {
-                            ConfigField(title: "配置名称", prompt: "如：Coding Plan", text: $name)
-
-                            // Proxy mode selector
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("代理模式")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Picker("", selection: $proxyMode) {
-                                    Text("本地代理").tag("localProxy")
-                                    Text("CC Switch").tag("ccSwitch")
-                                }
-                                .pickerStyle(.segmented)
-                                .labelsHidden()
-                            }
-
-                            if proxyMode == "ccSwitch" {
-                                // CC-Switch mode fields
-                                ConfigField(title: "CC Switch 地址", prompt: "http://127.0.0.1:15721", text: $ccSwitchUrl)
-                                Text("模型映射和认证在 CC Switch 中配置，此处只需填写地址。Model ID 须为 Anthropic 风格（如 claude-opus-4-7）。")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                // Local proxy mode fields
-                                ConfigField(title: "API Base URL", prompt: "https://coding.dashscope.aliyuncs.com/apps/anthropic", text: $apiBaseUrl)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("API Key")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    HStack {
-                                        if showApiKey {
-                                            TextField("sk-...", text: $apiKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        } else {
-                                            SecureField("sk-...", text: $apiKey)
-                                                .textFieldStyle(.roundedBorder)
-                                        }
-                                        Button(action: { showApiKey.toggle() }) {
-                                            Image(systemName: showApiKey ? "eye.slash" : "eye")
-                                                .foregroundColor(.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("上游认证方式")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    Picker("", selection: $authScheme) {
-                                        Text("Bearer").tag("bearer")
-                                        Text("x-api-key").tag("x-api-key")
-                                        Text("anthropic-api-key").tag("anthropic-api-key")
-                                    }
-                                    .pickerStyle(.segmented)
-                                    .labelsHidden()
-                                }
-
-                                ConfigField(title: "上游模型名称", prompt: ConfigProfile.defaultUpstreamModel, text: $modelName)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("代理端口（全局）")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                    HStack {
-                                        TextField("3456", text: $proxyPort)
-                                            .textFieldStyle(.roundedBorder)
-                                            .frame(width: 100)
-                                        Text("本地代理监听端口，用于透传请求并映射模型")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                    }
-                                }
-                            }
-
-                            ConfigField(title: "出站主机白名单", prompt: "* 表示允许所有，多个用逗号分隔", text: $allowedHosts)
-                        }
-                        .padding(4)
-                    } label: {
-                        Label("推理配置", systemImage: "network")
-                            .font(.headline)
-                    }
-
-                    HStack(spacing: 12) {
-                        Button(action: save) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color(red: 0.2, green: 0.7, blue: 0.3))
-                                Label(isNew ? "创建并激活" : "保存配置", systemImage: "checkmark.circle.fill")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity, minHeight: 28)
-                            }
-                        }
-                        .buttonStyle(.plain)
-
-                        if !isNew, let profile = profile {
-                            let isCurrent = manager.activeProfileId == profile.id
-                            Button(action: {
-                                manager.activateProfile(id: profile.id)
-                            }) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(isCurrent ? Color.gray.opacity(0.3) : Color.blue.opacity(0.5), lineWidth: 1)
-                                    Label("设为当前配置", systemImage: "arrow.left.arrow.right.circle")
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(isCurrent ? Color.gray : Color.blue)
-                                        .frame(maxWidth: .infinity, minHeight: 28)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isCurrent)
-
-                            Button(action: {
-                                manager.duplicateProfile(id: profile.id)
-                            }) {
-                                Label("复制", systemImage: "doc.on.doc")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(Color.gray)
-                                    .frame(minHeight: 28)
-                            }
-                            .buttonStyle(.plain)
-
-                            Button(action: {
-                                manager.deleteProfile(id: profile.id)
-                            }) {
-                                Label("删除", systemImage: "trash")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(Color(red: 0.9, green: 0.2, blue: 0.2))
-                                    .frame(minHeight: 28)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(manager.profiles.count <= 1)
-                        }
-                    }
+                    connectionSettings
                 }
-                .padding()
+                .padding(20)
             }
+
+            Divider()
+
+            actionBar
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(AppTheme.surfaceSoft)
         }
         .onAppear {
             NSLog("[CD] ProfileEditor.onAppear, isNew=\(isNew)")
@@ -1842,6 +1994,158 @@ struct ProfileEditor: View {
         }
         .onChange(of: manager.proxyPort) { newPort in
             proxyPort = String(newPort)
+        }
+    }
+
+    private var connectionSettings: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Label("连接设置", systemImage: "network")
+                .font(.system(size: 13, weight: .semibold))
+
+            Divider()
+
+            ConfigField(title: "配置名称", prompt: "如：Coding Plan", text: $name)
+
+            VStack(alignment: .leading, spacing: 6) {
+                fieldLabel("代理模式")
+                Picker("", selection: $proxyMode) {
+                    Text("本地代理").tag("localProxy")
+                    Text("CC Switch").tag("ccSwitch")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
+            modeFields
+            ConfigField(title: "出站主机白名单", prompt: "* 表示允许所有，多个用逗号分隔", text: $allowedHosts)
+        }
+        .padding(15)
+        .background(AppTheme.surfaceSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppTheme.border, lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private var modeFields: some View {
+        if proxyMode == "ccSwitch" {
+            ConfigField(title: "CC Switch 地址", prompt: "http://127.0.0.1:15721", text: $ccSwitchUrl)
+            Text("模型映射和认证在 CC Switch 中配置，此处只需填写地址。Model ID 须为 Anthropic 风格（如 claude-opus-4-7）。")
+                .font(.system(size: 11))
+                .foregroundColor(AppTheme.muted)
+        } else {
+            ConfigField(title: "API Base URL", prompt: "https://coding.dashscope.aliyuncs.com/apps/anthropic", text: $apiBaseUrl)
+            apiKeyField
+            authSchemeField
+            ConfigField(title: "上游模型名称", prompt: ConfigProfile.defaultUpstreamModel, text: $modelName)
+            proxyPortField
+        }
+    }
+
+    private var apiKeyField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel("API Key")
+            HStack {
+                Group {
+                    if showApiKey {
+                        TextField("sk-...", text: $apiKey)
+                    } else {
+                        SecureField("sk-...", text: $apiKey)
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+
+                Button(action: { showApiKey.toggle() }) {
+                    Image(systemName: showApiKey ? "eye.slash" : "eye")
+                        .foregroundColor(AppTheme.muted)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(showApiKey ? "隐藏 API Key" : "显示 API Key")
+            }
+        }
+    }
+
+    private var authSchemeField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel("上游认证方式")
+            Picker("", selection: $authScheme) {
+                Text("Bearer").tag("bearer")
+                Text("x-api-key").tag("x-api-key")
+                Text("anthropic-api-key").tag("anthropic-api-key")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+    }
+
+    private var proxyPortField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            fieldLabel("代理端口（全局）")
+            HStack {
+                TextField("3456", text: $proxyPort)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                Text("本地代理监听端口，用于透传请求并映射模型")
+                    .font(.system(size: 11))
+                    .foregroundColor(AppTheme.muted)
+                Spacer()
+            }
+        }
+    }
+
+    private func fieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundColor(AppTheme.inkSecondary)
+    }
+
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Button(action: save) {
+                Label(isNew ? "创建并激活" : "保存配置", systemImage: "checkmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(AppTheme.surface)
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .background(AppTheme.ink, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+
+            if !isNew, let profile = profile {
+                profileActions(profile)
+            }
+        }
+    }
+
+    private func profileActions(_ profile: ConfigProfile) -> some View {
+        let isCurrent = manager.activeProfileId == profile.id
+        return HStack(spacing: 10) {
+            Button(action: { manager.activateProfile(id: profile.id) }) {
+                Label(isCurrent ? "当前配置" : "设为当前", systemImage: isCurrent ? "checkmark.circle.fill" : "arrow.left.arrow.right.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isCurrent ? AppTheme.muted : AppTheme.ink)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 32)
+                    .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isCurrent)
+
+            Button(action: { manager.duplicateProfile(id: profile.id) }) {
+                Label("复制", systemImage: "doc.on.doc")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppTheme.inkSecondary)
+                    .frame(minHeight: 32)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { manager.deleteProfile(id: profile.id) }) {
+                Label("删除", systemImage: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(AppTheme.danger)
+                    .frame(minHeight: 32)
+            }
+            .buttonStyle(.plain)
+            .disabled(manager.profiles.count <= 1)
         }
     }
 
@@ -1899,10 +2203,12 @@ struct ConfigField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(AppTheme.inkSecondary)
             TextField(prompt, text: $text)
                 .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+                .controlSize(.large)
         }
     }
 }
@@ -1937,32 +2243,36 @@ struct AboutTab: View {
     private let releaseTime = Bundle.main.object(forInfoDictionaryKey: "ClaudeDualReleaseTime") as? String ?? "-"
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Label("关于 ClaudeDual", systemImage: "info.circle")
-                    .font(.headline)
-                Spacer()
-            }
-            .padding()
-
-            Divider()
-
-            VStack(spacing: 18) {
-                VStack(spacing: 10) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 72, height: 72)
-                        .cornerRadius(16)
-
-                    Text("ClaudeDual")
-                        .font(.system(size: 24, weight: .bold))
-
-                    Text("Claude Desktop 第三方模型与开发者模式管理工具")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                PageHeader(
+                    eyebrow: "应用信息",
+                    title: "关于 ClaudeDual",
+                    subtitle: "为 Claude Desktop 打造的第三方模型与开发者模式管理工具"
+                ) {
+                    EmptyView()
                 }
 
-                VStack(spacing: 0) {
+                VStack(spacing: 18) {
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accent.opacity(0.10))
+                            .frame(width: 112, height: 112)
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .frame(width: 78, height: 78)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+
+                    VStack(spacing: 6) {
+                        Text("ClaudeDual")
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                        Text("让 Claude Desktop 自由连接你的模型服务")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(spacing: 0) {
                     AboutInfoRow(label: "版本", value: "\(appVersion) (\(buildNumber))")
                     Divider()
                     AboutInfoRow(label: "发布时间", value: releaseTime)
@@ -1976,7 +2286,7 @@ struct AboutTab: View {
                             .foregroundColor(.secondary)
                             .frame(width: 86, alignment: .leading)
                         Link("赛脖古主页", destination: authorURL)
-                            .foregroundColor(.accentColor)
+                            .foregroundColor(AppTheme.focus)
                         Spacer()
                         Image(systemName: "arrow.up.right")
                             .font(.system(size: 11, weight: .semibold))
@@ -1986,20 +2296,13 @@ struct AboutTab: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 11)
                 }
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
-                )
-                .frame(maxWidth: 520)
-
-                Spacer()
+                    .appCard(cornerRadius: 10)
+                    .frame(maxWidth: 520)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
             }
-            .padding(.top, 34)
-            .padding(.horizontal, 28)
+            .padding(28)
         }
     }
 }
@@ -2020,7 +2323,7 @@ struct AboutInfoRow: View {
         }
         .font(.system(size: 13))
         .padding(.horizontal, 16)
-        .padding(.vertical, 11)
+        .padding(.vertical, 12)
     }
 }
 
@@ -2030,65 +2333,91 @@ struct LogsTab: View {
     @ObservedObject var manager: ClaudeDualManager
 
     var body: some View {
-        let _ = NSLog("[CD] LogsTab.body building, logCount=\(manager.logs.count)")
-        VStack(spacing: 0) {
-            HStack {
-                Label("日志记录", systemImage: "doc.text.below.ecg")
-                    .font(.headline)
+        VStack(alignment: .leading, spacing: 18) {
+            PageHeader(
+                eyebrow: "运行记录",
+                title: "运行日志",
+                subtitle: "追踪实例启动、配置写入与代理服务事件"
+            ) {
+                HStack(spacing: 9) {
+                    Text("\(manager.logs.count) 条记录")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(AppTheme.surface, in: Capsule())
 
-                Spacer()
-
-                Text("\(manager.logs.count) 条记录")
-                    .font(.caption)
-                    .foregroundColor(Color.gray)
-
-                Button(action: { manager.clearLogs() }) {
-                    Image(systemName: "trash")
+                    Button(action: manager.clearLogs) {
+                        Label("清空", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(manager.logs.isEmpty)
                 }
-                .buttonStyle(.borderless)
-                .help("清空日志")
             }
-            .padding()
-
-            Divider()
 
             if manager.logs.isEmpty {
-                VStack {
-                    Spacer()
-                    VStack(spacing: 8) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 32))
-                            .foregroundColor(Color.gray.opacity(0.5))
-                        Text("暂无日志")
-                            .foregroundColor(Color.gray)
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(AppTheme.accent.opacity(0.08))
+                        Image(systemName: "text.page.badge.magnifyingglass")
+                            .font(.system(size: 25, weight: .medium))
+                            .foregroundColor(AppTheme.accent.opacity(0.72))
                     }
-                    Spacer()
+                    .frame(width: 62, height: 62)
+
+                    Text("暂无运行日志")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("启动实例或修改配置后，相关事件会显示在这里")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .appCard()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(manager.logs) { entry in
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: entry.type.icon)
-                                    .foregroundColor(entry.type.color)
-                                    .font(.system(size: 12))
-                                    .frame(width: 16)
-
-                                Text(entry.time)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(Color.gray)
-                                    .frame(width: 60, alignment: .leading)
-
-                                Text(entry.message)
-                                    .font(.system(size: 12))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 12)
+                    LazyVStack(spacing: 7) {
+                        ForEach(Array(manager.logs.enumerated()), id: \.element.id) { index, entry in
+                            LogRow(entry: entry, index: index)
                         }
                     }
+                    .padding(10)
                 }
+                .appCard()
             }
         }
+        .padding(28)
+    }
+}
+
+struct LogRow: View {
+    let entry: LogEntry
+    let index: Int
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(entry.type.color.opacity(0.12))
+                Image(systemName: entry.type.icon)
+                    .foregroundColor(entry.type.color)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .frame(width: 28, height: 28)
+
+            Text(entry.time)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 58, alignment: .leading)
+                .padding(.top, 7)
+
+            Text(entry.message)
+                .font(.system(size: 12, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 5)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(index.isMultiple(of: 2) ? AppTheme.accent.opacity(0.035) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
     }
 }

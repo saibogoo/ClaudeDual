@@ -1,9 +1,13 @@
 # Build artifacts
 ClaudeDual
 ClaudeDual.app/
-ClaudeDual.dmg
+*.dmg
 Claude-Kimi
 claude-script.app/
+
+# Icon drafts / backups (only icon.png and ClaudeDual.icns are tracked)
+Resources/*-original.*
+Resources/icon-v*.png
 
 # Config with hardcoded API keys
 configLibrary/
