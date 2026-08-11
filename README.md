@@ -6,9 +6,11 @@ ClaudeDual is a macOS desktop application designed for Claude Desktop users to m
 
 ## 📸 Screenshots
 
-| Status | Configuration | Logs |
-|:---:|:---:|:---:|
-| ![Status](docs/screenshots/status.png) | ![Configuration](docs/screenshots/configuration.png) | ![Logs](docs/screenshots/logs.png) |
+![Status](docs/screenshots/status.png)
+
+| Configuration | Logs |
+|:---:|:---:|
+| ![Configuration](docs/screenshots/configuration.png) | ![Logs](docs/screenshots/logs.png) |
 
 ## 🚀 Features
 

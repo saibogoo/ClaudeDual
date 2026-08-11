@@ -6,9 +6,11 @@ ClaudeDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，�
 
 ## 📸 界面预览
 
-| 状态 | 配置 | 日志 |
-|:---:|:---:|:---:|
-| ![状态](docs/screenshots/status.png) | ![配置](docs/screenshots/configuration.png) | ![日志](docs/screenshots/logs.png) |
+![状态](docs/screenshots/status.png)
+
+| 配置 | 日志 |
+|:---:|:---:|
+| ![配置](docs/screenshots/configuration.png) | ![日志](docs/screenshots/logs.png) |
 
 ## 🚀 功能特性
 
