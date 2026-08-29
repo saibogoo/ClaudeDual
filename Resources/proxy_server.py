@@ -24,12 +24,17 @@ import http.client
 import urllib.parse
 import socketserver
 import http.server
+import os
 
 
 def load_config(config_path: str) -> dict:
     """Load configuration from JSON file."""
     with open(config_path, 'r') as f:
-        return json.load(f)
+        config = json.load(f)
+    api_key_env = config.get('api_key_env')
+    if api_key_env:
+        config['api_key'] = os.environ.get(api_key_env, '')
+    return config
 
 
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
@@ -57,10 +62,6 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-haiku-4-5-20251001",
-            "claude-opus-4-8",
-            "claude-opus-4-7",
-            "claude-opus-4-6",
-            "claude-sonnet-4-6",
         ]
         self._send_json(200, {
             "object": "list",

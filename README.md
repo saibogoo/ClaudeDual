@@ -22,7 +22,7 @@ ClaudeDual is a macOS desktop application designed for Claude Desktop users to m
 ### ⚙️ Multi-Configuration Management
 - **Configuration System**: Create, edit, copy, delete multiple model configurations
 - **Flexible Switching**: Quick switching between different model providers and settings
-- **Parameter Customization**: Fully configurable API address, keys, authentication methods, model names, etc.
+- **Parameter Customization**: Configure separate Claude (Anthropic) and Codex (OpenAI) API base URLs, keys, authentication methods, model names, etc.
 
 ### 🌐 Proxy Server
 - **Built-in Proxy**: Integrated Python HTTP proxy supporting request forwarding and model name mapping
@@ -103,6 +103,16 @@ If macOS blocks the app with "unverified developer", run:
 sudo xattr -r -d com.apple.quarantine /Applications/ClaudeDual.app
 ```
 
+### Online Updates
+
+ClaudeDual checks GitHub Releases at startup. You can also check manually under **About → Online Update**. When a new version is available:
+
+1. Click **Download Update**
+2. ClaudeDual verifies both the asset size and the SHA-256 digest provided by GitHub
+3. After verification, the DMG opens automatically; drag the new app into Applications and replace the old version
+
+If checking or downloading fails, open the linked GitHub Release and download the installer manually.
+
 ### Build from Source
 
 ClaudeDual is a single-file SwiftUI app — no Xcode project required.
@@ -155,7 +165,10 @@ Use CC-Switch as the upstream gateway when you want model routing, authenticatio
 ## 📚 Documentation
 
 - [第三方模型配置指南](docs/第三方模型配置指南.md) — Full guide to Developer Mode and third-party inference (Chinese)
+- [Codex 隔离实例](docs/Codex隔离实例.md) — Share inference profiles while isolating Codex state and desktop data (Chinese)
 - [安装说明](docs/安装说明.md) — Installation notes (Chinese)
+
+> Codex uses the OpenAI Responses API (`/v1/responses`). An Anthropic-Messages-only upstream will return 404; use an OpenAI Responses-compatible endpoint or gateway for Codex.
 
 ## 🤝 Contributing
 

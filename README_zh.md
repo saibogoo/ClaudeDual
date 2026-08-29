@@ -52,6 +52,8 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
 ### 配置注入机制
 应用在启动前会生成配置文件并写入隔离实例的 `configLibrary/` 目录：
 
+配置页分别填写 **Claude API Base URL（Anthropic）** 和 **Codex API Base URL（OpenAI）**。Claude 请求 `/v1/messages`，Codex 请求 `/v1/responses`；如果服务商为两个协议提供不同地址，不能把 OpenAI 兼容地址填到 Claude 一栏。例如阿里云 Model Studio 应使用 `.../apps/anthropic` 和 `.../v1`（Token Plan 的 OpenAI 地址为 `.../compatible-mode/v1`）。
+
 **推理配置**（`7595758f-...json`）：
 ```json
 {
@@ -102,6 +104,16 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
 ```bash
 sudo xattr -r -d com.apple.quarantine /Applications/ClaudeDual.app
 ```
+
+### 在线升级
+
+ClaudeDual 启动后会自动检查 GitHub Release，也可以在“关于 → 在线升级”中手动检查。发现新版本后：
+
+1. 点击“下载升级包”
+2. 应用会核对 Release 资产大小和 GitHub 提供的 SHA-256 摘要
+3. 校验通过后自动打开 DMG，将新版拖入“应用程序”并覆盖旧版
+
+如果检查或下载失败，可在同一区域打开对应的 GitHub Release 手动下载。
 
 ### 从源码构建
 
@@ -155,7 +167,10 @@ tools/PackageApp.sh
 ## 📚 文档
 
 - [第三方模型配置指南](docs/第三方模型配置指南.md) —— Developer Mode 与第三方推理完整指南
+- [Codex 隔离实例](docs/Codex隔离实例.md) —— 共享推理配置，隔离第二个 Codex 的状态与桌面数据
 - [安装说明](docs/安装说明.md) —— 安装与常见问题
+
+> Codex 使用 OpenAI Responses API（`/v1/responses`）。如果配置的是仅支持 Anthropic Messages API 的上游地址，Codex 会收到 404；请改用 OpenAI Responses 兼容的地址或网关。
 
 ## 🤝 贡献
 
