@@ -74,11 +74,20 @@ jobs:
           SIZE="$(stat -f '%z' "$ASSET")"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/$ASSET"
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${{ steps.ver.outputs.tag }}"
+          NOTES="$(awk -v tag="## ${{ steps.ver.outputs.tag }}" '
+            $0 == tag {found=1; next}
+            found && /^## / {exit}
+            found {print}
+          ' CHANGELOG.md | sed -e '/^[[:space:]]*$/d')"
+          if [ -z "$NOTES" ]; then
+            echo "CHANGELOG.md has no section for ${{ steps.ver.outputs.tag }}" >&2
+            exit 1
+          fi
           jq -n \
             --arg version "${{ steps.ver.outputs.version }}" \
             --arg tag_name "${{ steps.ver.outputs.tag }}" \
             --arg title "ClaudexDual ${{ steps.ver.outputs.tag }}" \
-            --arg notes "请查看 GitHub Release 获取本版本的完整更新说明。" \
+            --arg notes "$NOTES" \
             --arg published_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
             --arg release_url "$RELEASE_URL" \
             --arg asset_name "$ASSET" \
