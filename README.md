@@ -1,8 +1,8 @@
-# ClaudeDual - Claude Desktop Third-Party Model Manager
+# ClaudexDual - Claude Desktop Third-Party Model Manager
 
 [English](README.md) · [简体中文](README_zh.md)
 
-ClaudeDual is a macOS desktop application designed for Claude Desktop users to manage third-party model configurations and enable Developer Mode. Through isolated instance launching and built-in proxy server, you can easily integrate various third-party model providers.
+ClaudexDual is a macOS desktop application designed for Claude Desktop users to manage third-party model configurations and enable Developer Mode. Through isolated instance launching and built-in proxy server, you can easily integrate various third-party model providers.
 
 ## 📸 Screenshots
 
@@ -83,7 +83,7 @@ The app generates and writes configuration files to the isolated instance's `con
 ### CC-Switch Integration
 When CC-Switch mode is enabled:
 - Bypass local proxy, directly point gateway address to CC-Switch service
-- No need to duplicate model mapping and authentication in ClaudeDual
+- No need to duplicate model mapping and authentication in ClaudexDual
 - Leverage CC-Switch's advanced routing and load balancing features
 
 ## 🔧 Installation & Usage
@@ -100,26 +100,26 @@ When CC-Switch mode is enabled:
 If macOS blocks the app with "unverified developer", run:
 
 ```bash
-sudo xattr -r -d com.apple.quarantine /Applications/ClaudeDual.app
+sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
 ```
 
 ### Online Updates
 
-ClaudeDual checks GitHub Releases at startup. You can also check manually under **About → Online Update**. When a new version is available:
+ClaudexDual checks GitHub Releases at startup. You can also check manually under **About → Online Update**. When a new version is available:
 
 1. Click **Download Update**
-2. ClaudeDual verifies both the asset size and the SHA-256 digest provided by GitHub
+2. ClaudexDual verifies both the asset size and the SHA-256 digest provided by GitHub
 3. After verification, the DMG opens automatically; drag the new app into Applications and replace the old version
 
 If checking or downloading fails, open the linked GitHub Release and download the installer manually.
 
 ### Build from Source
 
-ClaudeDual is a single-file SwiftUI app — no Xcode project required.
+ClaudexDual is a single-file SwiftUI app — no Xcode project required.
 
 ```bash
 # Compile a standalone executable
-swiftc -parse-as-library ClaudeDualApp.swift -o ClaudeDual
+swiftc -parse-as-library ClaudexDualApp.swift -o ClaudexDual
 
 # Or package a full .app bundle (icon + proxy script + Info.plist)
 tools/PackageApp.sh
@@ -131,7 +131,7 @@ Requires macOS 13.0+, Swift toolchain (Xcode Command Line Tools), and Python 3 f
 1. **Check Status**: Confirm Claude Desktop is installed and Developer Mode is enabled
 2. **Create Configuration**: Add your third-party model provider settings in configuration page
 3. **Select Mode**:
-   - Local Proxy Mode: ClaudeDual manages all configurations
+   - Local Proxy Mode: ClaudexDual manages all configurations
    - CC-Switch Mode: Connect to existing CC-Switch service
 4. **Start Instance**: Click start button, wait for isolated instance to load
 5. **Start Using**: Experience third-party models in the new instance
@@ -154,7 +154,7 @@ Customize `coworkEgressAllowedHosts` to control external domains accessible to C
 Through the proxy server, map Claude frontend displayed model names to actual upstream model names.
 
 ### CC-Switch Delegation
-Use CC-Switch as the upstream gateway when you want model routing, authentication, and load balancing to be managed outside ClaudeDual.
+Use CC-Switch as the upstream gateway when you want model routing, authentication, and load balancing to be managed outside ClaudexDual.
 
 ## 🛡️ Security Notice
 
@@ -172,7 +172,7 @@ Use CC-Switch as the upstream gateway when you want model routing, authenticatio
 
 ## 🤝 Contributing
 
-Welcome to submit Issues and Pull Requests to improve ClaudeDual!
+Welcome to submit Issues and Pull Requests to improve ClaudexDual!
 
 ## 📄 License
 
@@ -180,4 +180,4 @@ Welcome to submit Issues and Pull Requests to improve ClaudeDual!
 
 ---
 
-*ClaudeDual lets you easily experience various third-party models in the Claude ecosystem and enjoy the fun of AI development!*
+*ClaudexDual lets you easily experience various third-party models in the Claude ecosystem and enjoy the fun of AI development!*

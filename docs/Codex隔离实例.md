@@ -1,6 +1,6 @@
 # Codex 隔离实例
 
-ClaudeDual 可以在不修改原有 `~/.codex` 的前提下，启动第二个 Codex 实例并使用自定义推理配置。
+ClaudexDual 可以在不修改原有 `~/.codex` 的前提下，启动第二个 Codex 实例并使用自定义推理配置。
 
 Claude 与 Codex 共用同一份配置列表和同一个“当前配置”。在任意客户端下新建、修改、复制、删除或激活配置，另一个客户端会立即使用同一结果。只有应用数据目录、进程、状态和本地代理端口按客户端隔离。
 
@@ -31,5 +31,5 @@ Codex 隔离实例使用独立的根目录：
 ## 配置与密钥
 
 - Codex 自定义 provider 使用 Responses API（`wire_api = "responses"`）。
-- 共享配置的 API 密钥保存在 macOS 钥匙串，不写入 UserDefaults 或生成的 Codex `config.toml`。启动时仅由 ClaudeDual 主进程按需读取一次，并通过子进程环境变量临时传递；代理和 Codex 不会再各自调用 `security`，避免重复的钥匙串授权提示。
+- 共享配置的 API 密钥保存在 macOS 钥匙串，不写入 UserDefaults 或生成的 Codex `config.toml`。启动时仅由 ClaudexDual 主进程按需读取一次，并通过子进程环境变量临时传递；代理和 Codex 不会再各自调用 `security`，避免重复的钥匙串授权提示。
 - 本地代理模式使用单独端口，与 Claude 代理的进程、配置和端口独立。

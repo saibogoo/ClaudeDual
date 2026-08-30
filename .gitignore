@@ -1,11 +1,13 @@
 # Build artifacts
+ClaudexDual
+ClaudexDual.app/
 ClaudeDual
 ClaudeDual.app/
 *.dmg
 Claude-Kimi
 claude-script.app/
 
-# Icon drafts / backups (only icon.png and ClaudeDual.icns are tracked)
+# Icon drafts / backups (only icon.png and ClaudexDual.icns are tracked)
 Resources/*-original.*
 Resources/icon-v*.png
 

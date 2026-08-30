@@ -1,8 +1,8 @@
-# ClaudeDual - Claude Desktop 第三方模型管理器
+# ClaudexDual - Claude Desktop 第三方模型管理器
 
 [English](README.md) · [简体中文](README_zh.md)
 
-ClaudeDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，用于管理第三方模型配置并开启 Developer Mode（开发者模式）。通过隔离实例启动和内置代理服务器，你可以轻松接入各种第三方模型服务商。
+ClaudexDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，用于管理第三方模型配置并开启 Developer Mode（开发者模式）。通过隔离实例启动和内置代理服务器，你可以轻松接入各种第三方模型服务商。
 
 ## 📸 界面预览
 
@@ -85,7 +85,7 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
 ### CC-Switch 集成
 启用 CC-Switch 模式时：
 - 跳过本地代理，将 gateway 地址直接指向 CC-Switch 服务
-- 无需在 ClaudeDual 中重复配置模型映射和认证
+- 无需在 ClaudexDual 中重复配置模型映射和认证
 - 复用 CC-Switch 的高级路由和负载均衡能力
 
 ## 🔧 安装与使用
@@ -102,12 +102,12 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
 如果 macOS 提示「无法验证开发者」，可执行：
 
 ```bash
-sudo xattr -r -d com.apple.quarantine /Applications/ClaudeDual.app
+sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
 ```
 
 ### 在线升级
 
-ClaudeDual 启动后会自动检查 GitHub Release，也可以在“关于 → 在线升级”中手动检查。发现新版本后：
+ClaudexDual 启动后会自动检查 GitHub Release，也可以在“关于 → 在线升级”中手动检查。发现新版本后：
 
 1. 点击“下载升级包”
 2. 应用会核对 Release 资产大小和 GitHub 提供的 SHA-256 摘要
@@ -117,11 +117,11 @@ ClaudeDual 启动后会自动检查 GitHub Release，也可以在“关于 → �
 
 ### 从源码构建
 
-ClaudeDual 是单文件 SwiftUI 应用，无需 Xcode 工程。
+ClaudexDual 是单文件 SwiftUI 应用，无需 Xcode 工程。
 
 ```bash
 # 编译为独立可执行文件
-swiftc -parse-as-library ClaudeDualApp.swift -o ClaudeDual
+swiftc -parse-as-library ClaudexDualApp.swift -o ClaudexDual
 
 # 或打包完整的 .app（图标 + 代理脚本 + Info.plist）
 tools/PackageApp.sh
@@ -133,7 +133,7 @@ tools/PackageApp.sh
 1. **检查状态**：确认 Claude Desktop 已安装、开发者模式已开启
 2. **创建配置**：在配置页添加你的第三方模型服务商设置
 3. **选择模式**：
-   - 本地代理模式：由 ClaudeDual 管理所有配置
+   - 本地代理模式：由 ClaudexDual 管理所有配置
    - CC-Switch 模式：对接已有的 CC-Switch 服务
 4. **启动实例**：点击启动按钮，等待隔离实例加载
 5. **开始使用**：在新实例中体验第三方模型
@@ -156,7 +156,7 @@ tools/PackageApp.sh
 通过代理服务器，将 Claude 前端显示的模型名映射到上游真实模型名。
 
 ### CC-Switch 委托
-当你希望模型路由、认证和负载均衡在 ClaudeDual 之外统一管理时，可将 CC-Switch 作为上游网关。
+当你希望模型路由、认证和负载均衡在 ClaudexDual 之外统一管理时，可将 CC-Switch 作为上游网关。
 
 ## 🛡️ 安全说明
 
@@ -174,7 +174,7 @@ tools/PackageApp.sh
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request 来改进 ClaudeDual！
+欢迎提交 Issue 和 Pull Request 来改进 ClaudexDual！
 
 ## 📄 许可证
 
@@ -182,4 +182,4 @@ tools/PackageApp.sh
 
 ---
 
-*ClaudeDual 让你在 Claude 生态中轻松体验各种第三方模型，享受 AI 开发的乐趣！*
+*ClaudexDual 让你在 Claude 生态中轻松体验各种第三方模型，享受 AI 开发的乐趣！*

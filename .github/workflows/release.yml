@@ -50,26 +50,26 @@ jobs:
       - name: Build universal .app
         run: |
           UNIVERSAL=1 tools/PackageApp.sh
-          codesign --force --deep --sign - ClaudeDual.app
-          codesign --verify --deep --strict --verbose=2 ClaudeDual.app
+          codesign --force --deep --sign - ClaudexDual.app
+          codesign --verify --deep --strict --verbose=2 ClaudexDual.app
 
       - name: Package DMG
         run: |
-          STAGE="$(mktemp -d)/ClaudeDual"
+          STAGE="$(mktemp -d)/ClaudexDual"
           mkdir -p "$STAGE"
-          cp -R ClaudeDual.app "$STAGE/"
+          cp -R ClaudexDual.app "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           cp "docs/安装说明.md" "$STAGE/"
-          hdiutil create -volname ClaudeDual \
+          hdiutil create -volname ClaudexDual \
             -srcfolder "$STAGE" -ov -format UDZO \
-            "ClaudeDual-${{ steps.ver.outputs.tag }}.dmg"
-          shasum -a 256 "ClaudeDual-${{ steps.ver.outputs.tag }}.dmg" \
-            > "ClaudeDual-${{ steps.ver.outputs.tag }}.dmg.sha256"
-          shasum -a 256 -c "ClaudeDual-${{ steps.ver.outputs.tag }}.dmg.sha256"
+            "ClaudexDual-${{ steps.ver.outputs.tag }}.dmg"
+          shasum -a 256 "ClaudexDual-${{ steps.ver.outputs.tag }}.dmg" \
+            > "ClaudexDual-${{ steps.ver.outputs.tag }}.dmg.sha256"
+          shasum -a 256 -c "ClaudexDual-${{ steps.ver.outputs.tag }}.dmg.sha256"
 
       - name: Build update manifest
         run: |
-          ASSET="ClaudeDual-${{ steps.ver.outputs.tag }}.dmg"
+          ASSET="ClaudexDual-${{ steps.ver.outputs.tag }}.dmg"
           SHA256="$(shasum -a 256 "$ASSET" | awk '{print $1}')"
           SIZE="$(stat -f '%z' "$ASSET")"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/$ASSET"
@@ -77,7 +77,7 @@ jobs:
           jq -n \
             --arg version "${{ steps.ver.outputs.version }}" \
             --arg tag_name "${{ steps.ver.outputs.tag }}" \
-            --arg title "ClaudeDual ${{ steps.ver.outputs.tag }}" \
+            --arg title "ClaudexDual ${{ steps.ver.outputs.tag }}" \
             --arg notes "请查看 GitHub Release 获取本版本的完整更新说明。" \
             --arg published_at "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
             --arg release_url "$RELEASE_URL" \
@@ -93,26 +93,26 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: ClaudeDual ${{ steps.ver.outputs.tag }}
+          name: ClaudexDual ${{ steps.ver.outputs.tag }}
           files: |
-            ClaudeDual-*.dmg
-            ClaudeDual-*.dmg.sha256
+            ClaudexDual-*.dmg
+            ClaudexDual-*.dmg.sha256
             latest.json
           generate_release_notes: true
           body: |
-            ## ClaudeDual ${{ steps.ver.outputs.tag }}
+            ## ClaudexDual ${{ steps.ver.outputs.tag }}
 
             macOS 桌面应用：一键开启 Claude Desktop Developer Mode、管理第三方推理配置、启动隔离实例。
 
             Codex 上游需要兼容 OpenAI Responses API（`/v1/responses`）。
 
             ### 安装
-            1. 下载下方的 `ClaudeDual-${{ steps.ver.outputs.tag }}.dmg`
-            2. 打开后将 `ClaudeDual.app` 拖入「应用程序」
+            1. 下载下方的 `ClaudexDual-${{ steps.ver.outputs.tag }}.dmg`
+            2. 打开后将 `ClaudexDual.app` 拖入「应用程序」
             3. 应用尚未公证，首次打开如被拦截，执行：
 
             ```bash
-            sudo xattr -r -d com.apple.quarantine /Applications/ClaudeDual.app
+            sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
             ```
 
             应用内“关于 → 在线升级”会检查 GitHub Release，并在校验安装包 SHA-256 后打开 DMG。
