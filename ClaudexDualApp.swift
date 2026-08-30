@@ -306,6 +306,10 @@ private enum AppUpdateError: LocalizedError {
     case sizeMismatch(expected: Int64, actual: Int64)
     case checksumMismatch
     case cannotOpenInstaller
+    case mountFailed(String)
+    case installerAppMissing
+    case destinationNotWritable(String)
+    case installFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -320,6 +324,10 @@ private enum AppUpdateError: LocalizedError {
             return "安装包大小不匹配（预期 \(expected) 字节，实际 \(actual) 字节）。"
         case .checksumMismatch: return "安装包 SHA-256 校验失败，文件可能不完整。"
         case .cannotOpenInstaller: return "安装包已下载，但无法自动打开。"
+        case .mountFailed(let detail): return "无法挂载安装包：\(detail)"
+        case .installerAppMissing: return "安装包中没有找到应用程序。"
+        case .destinationNotWritable(let path): return "没有写入权限：\(path)"
+        case .installFailed(let detail): return "自动安装失败：\(detail)"
         }
     }
 }
@@ -328,6 +336,7 @@ private enum AppUpdateError: LocalizedError {
 final class AppUpdateManager: ObservableObject {
     @Published private(set) var isChecking = false
     @Published private(set) var isDownloading = false
+    @Published private(set) var isInstalling = false
     @Published private(set) var availableRelease: AppUpdateRelease?
     @Published private(set) var latestRelease: AppUpdateRelease?
     @Published private(set) var downloadedInstallerURL: URL?
@@ -428,10 +437,7 @@ final class AppUpdateManager: ObservableObject {
             let destination = try uniqueDownloadDestination(filename: release.asset.name)
             try FileManager.default.moveItem(at: temporaryURL, to: destination)
             downloadedInstallerURL = destination
-            statusMessage = "安装包已校验并打开，请将 ClaudexDual 拖入“应用程序”完成升级。"
-            guard NSWorkspace.shared.open(destination) else {
-                throw AppUpdateError.cannotOpenInstaller
-            }
+            await installDownloadedUpdate(installer: destination)
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             errorMessage = message
@@ -578,6 +584,146 @@ final class AppUpdateManager: ObservableObject {
             hasher.update(data: data)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// 校验通过后自动完成安装：挂载 DMG、暂存新版本、由外部脚本在本进程退出后替换并重启。
+    /// 任何一步失败都回退到打开 DMG 让用户手动拖拽。
+    private func installDownloadedUpdate(installer: URL) async {
+        isInstalling = true
+        statusMessage = "正在安装更新…"
+        let bundleURL = Bundle.main.bundleURL
+        do {
+            let plan = try await Task.detached(priority: .userInitiated) {
+                try AppUpdateManager.prepareInstallation(installer: installer, currentBundle: bundleURL)
+            }.value
+            statusMessage = "安装完成，正在重启…"
+            try AppUpdateManager.launchReplacer(plan)
+            isInstalling = false
+            // 交给脚本接管：它会等本进程退出后替换并重新打开应用。
+            NSApplication.shared.terminate(nil)
+        } catch {
+            isInstalling = false
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            errorMessage = "\(message) 已打开安装包，请手动拖入“应用程序”完成升级。"
+            statusMessage = "自动安装未完成，请手动安装"
+            NSWorkspace.shared.open(installer)
+        }
+    }
+
+    fileprivate struct InstallPlan {
+        let stagedApp: URL
+        let destination: URL
+        let scriptURL: URL
+        let installer: URL
+    }
+
+    /// 挂载安装包并把新版本拷贝到临时目录，同时生成替换脚本。全部在后台线程执行。
+    fileprivate nonisolated static func prepareInstallation(installer: URL, currentBundle: URL) throws -> InstallPlan {
+        let work = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("ClaudexDualUpdate-\(UUID().uuidString)")
+        let mountPoint = work.appendingPathComponent("mount")
+        let staging = work.appendingPathComponent("staging")
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+
+        let mount = run("/usr/bin/hdiutil", ["attach", installer.path, "-nobrowse", "-readonly",
+                                             "-mountpoint", mountPoint.path])
+        guard mount.status == 0 else {
+            throw AppUpdateError.mountFailed(mount.output.isEmpty ? "hdiutil 退出码 \(mount.status)" : mount.output)
+        }
+        defer { _ = run("/usr/bin/hdiutil", ["detach", mountPoint.path, "-quiet", "-force"]) }
+
+        let entries = (try? FileManager.default.contentsOfDirectory(at: mountPoint,
+                                                                    includingPropertiesForKeys: nil)) ?? []
+        guard let sourceApp = entries.first(where: { $0.pathExtension == "app" }) else {
+            throw AppUpdateError.installerAppMissing
+        }
+
+        // 安装到当前应用所在目录；改名后新旧同名才会被覆盖。
+        let installDir = currentBundle.deletingLastPathComponent()
+        guard FileManager.default.isWritableFile(atPath: installDir.path) else {
+            throw AppUpdateError.destinationNotWritable(installDir.path)
+        }
+
+        let stagedApp = staging.appendingPathComponent(sourceApp.lastPathComponent)
+        let copy = run("/usr/bin/ditto", [sourceApp.path, stagedApp.path])
+        guard copy.status == 0 else {
+            throw AppUpdateError.installFailed(copy.output.isEmpty ? "ditto 退出码 \(copy.status)" : copy.output)
+        }
+        // 下载来的包带隔离属性，不清除会被 Gatekeeper 拦下。
+        _ = run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", stagedApp.path])
+
+        let destination = installDir.appendingPathComponent(sourceApp.lastPathComponent)
+        let scriptURL = work.appendingPathComponent("install.sh")
+        let script = """
+        #!/bin/bash
+        # 由 ClaudexDual 在线升级生成：等待应用退出后替换并重启。
+        set -u
+        DEST=\(shellQuoted(destination.path))
+        STAGED=\(shellQuoted(stagedApp.path))
+        BACKUP="$DEST.oldversion"
+        WORK=\(shellQuoted(work.path))
+        INSTALLER=\(shellQuoted(installer.path))
+
+        for _ in $(seq 1 100); do
+          kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null || break
+          sleep 0.2
+        done
+        sleep 0.5
+
+        rm -rf "$BACKUP"
+        if [ -d "$DEST" ] && ! mv "$DEST" "$BACKUP"; then
+          open "$INSTALLER"
+          exit 1
+        fi
+        if ditto "$STAGED" "$DEST"; then
+          rm -rf "$BACKUP"
+          xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+          open "$DEST"
+        else
+          # 复制失败则回滚到旧版本，并退回手动安装。
+          rm -rf "$DEST"
+          [ -d "$BACKUP" ] && mv "$BACKUP" "$DEST"
+          [ -d "$DEST" ] && open "$DEST"
+          open "$INSTALLER"
+        fi
+        rm -rf "$WORK"
+        """
+        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+        return InstallPlan(stagedApp: stagedApp, destination: destination, scriptURL: scriptURL, installer: installer)
+    }
+
+    /// 以脱离父进程的方式启动替换脚本，使其在本应用退出后继续执行。
+    fileprivate nonisolated static func launchReplacer(_ plan: InstallPlan) throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = [plan.scriptURL.path]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        try task.run()
+    }
+
+    private nonisolated static func shellQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    @discardableResult
+    private nonisolated static func run(_ path: String, _ arguments: [String]) -> (status: Int32, output: String) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: path)
+        task.arguments = arguments
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = pipe
+        do {
+            try task.run()
+        } catch {
+            return (-1, error.localizedDescription)
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (task.terminationStatus, text)
     }
 
     private func uniqueDownloadDestination(filename: String) throws -> URL {
@@ -3738,7 +3884,7 @@ struct UpdateAvailableSheet: View {
                     .font(.system(size: 11))
                     .foregroundColor(AppTheme.danger)
             } else {
-                Text("安装包下载后会进行大小和 SHA-256 校验，并自动打开 DMG。将新版拖入“应用程序”覆盖旧版即可完成升级。")
+                Text("下载后会校验大小与 SHA-256，随后自动替换应用并重新启动，无需手动拖拽。若自动安装失败，会打开安装包供手动升级。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
@@ -3752,17 +3898,17 @@ struct UpdateAvailableSheet: View {
                 Button {
                     Task { await updateManager.downloadAvailableUpdate() }
                 } label: {
-                    if updateManager.isDownloading {
+                    if updateManager.isDownloading || updateManager.isInstalling {
                         HStack(spacing: 7) {
                             ProgressView().controlSize(.small)
-                            Text("正在下载…")
+                            Text(updateManager.isInstalling ? "正在安装…" : "正在下载…")
                         }
                     } else {
-                        Label("下载升级包", systemImage: "arrow.down.circle")
+                        Label("下载并安装", systemImage: "arrow.down.circle")
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(updateManager.isDownloading)
+                .disabled(updateManager.isDownloading || updateManager.isInstalling)
             }
         }
         .padding(24)
