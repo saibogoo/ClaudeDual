@@ -109,11 +109,11 @@ sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
 
 ClaudexDual 启动后会自动检查 GitHub Release，也可以在“关于 → 在线升级”中手动检查。发现新版本后：
 
-1. 点击“下载升级包”
+1. 点击“下载并安装”
 2. 应用会核对 Release 资产大小和 GitHub 提供的 SHA-256 摘要
-3. 校验通过后自动打开 DMG，将新版拖入“应用程序”并覆盖旧版
+3. 校验通过后自动替换应用并重新启动，无需手动拖拽
 
-如果检查或下载失败，可在同一区域打开对应的 GitHub Release 手动下载。
+如果自动安装无法进行（例如安装目录不可写），应用会恢复原有版本并打开 DMG，供你手动安装。
 
 ### 从源码构建
 
@@ -169,6 +169,7 @@ tools/PackageApp.sh
 - [第三方模型配置指南](docs/第三方模型配置指南.md) —— Developer Mode 与第三方推理完整指南
 - [Codex 隔离实例](docs/Codex隔离实例.md) —— 共享推理配置，隔离第二个 Codex 的状态与桌面数据
 - [安装说明](docs/安装说明.md) —— 安装与常见问题
+- [发布流程规范](docs/发布流程规范.md) —— 打包发布流程与版本号规则
 
 > Codex 使用 OpenAI Responses API（`/v1/responses`）。如果配置的是仅支持 Anthropic Messages API 的上游地址，Codex 会收到 404；请改用 OpenAI Responses 兼容的地址或网关。
 

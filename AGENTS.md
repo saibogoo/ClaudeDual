@@ -24,17 +24,16 @@ tools/PackageApp.sh
 
 打包脚本会复用 `Resources/ClaudexDual.icns`，不要每次重新生成图标。只有该文件缺失或明确需要更新图标时，PackageApp.sh 会自动用 `Resources/icon.png` + `tools/BuildIcns.py` 重新生成。
 
-### 打包 DMG
+### 发布
 
-```bash
-hdiutil create -volname ClaudexDual -srcfolder /private/tmp/claude-dual-dmg-final-20260517 -ov -format UDZO ClaudexDual.dmg
-```
+**发布前必须先阅读 [发布流程规范](docs/发布流程规范.md)，并严格按其执行。**
 
-发布前确认 DMG 内包含：
+要点：
 
-- `ClaudexDual.app`
-- `Applications` 快捷方式
-- `docs/安装说明.md`
+- 版本号由维护者指定，不要自行决定
+- 推送 tag 会公开发布 Release，必须先获得明确授权
+- DMG、SHA-256 和 `latest.json` 全部由 CI 生成，不要手动打包上传
+- 面向用户的更新说明写在 `CHANGELOG.md`，会被提取到应用内升级弹窗
 
 ## 架构概览
 

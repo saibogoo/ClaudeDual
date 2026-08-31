@@ -107,11 +107,11 @@ sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
 
 ClaudexDual checks GitHub Releases at startup. You can also check manually under **About → Online Update**. When a new version is available:
 
-1. Click **Download Update**
+1. Click **Download and Install**
 2. ClaudexDual verifies both the asset size and the SHA-256 digest provided by GitHub
-3. After verification, the DMG opens automatically; drag the new app into Applications and replace the old version
+3. After verification it replaces the app in place and relaunches automatically — no dragging required
 
-If checking or downloading fails, open the linked GitHub Release and download the installer manually.
+If the automatic install cannot proceed (for example the install directory is not writable), ClaudexDual restores the previous version and opens the DMG so you can install manually.
 
 ### Build from Source
 
@@ -167,6 +167,7 @@ Use CC-Switch as the upstream gateway when you want model routing, authenticatio
 - [第三方模型配置指南](docs/第三方模型配置指南.md) — Full guide to Developer Mode and third-party inference (Chinese)
 - [Codex 隔离实例](docs/Codex隔离实例.md) — Share inference profiles while isolating Codex state and desktop data (Chinese)
 - [安装说明](docs/安装说明.md) — Installation notes (Chinese)
+- [发布流程规范](docs/发布流程规范.md) — Release process and versioning rules (Chinese)
 
 > Codex uses the OpenAI Responses API (`/v1/responses`). An Anthropic-Messages-only upstream will return 404; use an OpenAI Responses-compatible endpoint or gateway for Codex.
 

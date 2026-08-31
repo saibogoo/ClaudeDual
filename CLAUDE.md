@@ -63,9 +63,19 @@ open -n -a /Applications/Claude.app --args --user-data-dir="$HOME/Library/Applic
 
 第三方推理配置采用 gateway provider，并在 `inferenceModels` 中写入 Claude 可见的模型别名，以跳过 gateway `/v1/models` 自动发现；真实上游模型名由 ClaudexDual 本地代理或 CC-Switch 处理。
 
+## 发布
+
+**发布前必须先阅读 [发布流程规范](docs/发布流程规范.md)，并严格按其执行。**
+
+- 版本号由维护者指定，不要自行推断
+- 推送 tag 会公开发布 Release，必须先获得明确授权
+- 发布产物全部由 CI 生成，不要手动打包上传
+- 更新说明写在 `CHANGELOG.md`，会被提取为应用内升级弹窗的内容
+
 ## 修改注意事项
 
 - API Key 只应保存在用户本机配置中，不要提交真实密钥。
 - 构建产物 `ClaudexDual`、`ClaudexDual.app/`、`ClaudexDual.dmg` 不应提交。
 - 修改 `Resources/proxy_server.py` 后，重新打包时必须复制到 app bundle。
 - `legacyDataDir` 只用于从旧的 `Claude-Kimi-3p` 数据目录迁移，保留是兼容设计。
+- 数据目录、钥匙串前缀、Bundle ID 和 GitHub 仓库 URL 仍沿用 ClaudeDual 旧名，改动会破坏老用户数据与在线升级，详见发布流程规范。
