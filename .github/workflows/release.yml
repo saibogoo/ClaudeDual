@@ -111,7 +111,7 @@ jobs:
           body: |
             ## ClaudexDual ${{ steps.ver.outputs.tag }}
 
-            macOS 桌面应用：一键开启 Claude Desktop Developer Mode、管理第三方推理配置、启动隔离实例。
+            macOS 桌面应用：管理 Claude Desktop 与 Codex 的第三方推理配置、模型映射和隔离实例。
 
             Codex 上游需要兼容 OpenAI Responses API（`/v1/responses`）。
 
@@ -124,6 +124,6 @@ jobs:
             sudo xattr -r -d com.apple.quarantine /Applications/ClaudexDual.app
             ```
 
-            应用内“关于 → 在线升级”会检查 GitHub Release，并在校验安装包 SHA-256 后打开 DMG。
+            应用内“关于 → 在线升级”会检查 GitHub Release，并在校验安装包 SHA-256 后自动替换应用并重启；失败时回退到手动安装。
 
             通用二进制（Apple Silicon + Intel），需要 macOS 13.0+。

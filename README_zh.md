@@ -1,8 +1,10 @@
-# ClaudexDual - Claude Desktop 第三方模型管理器
+# ClaudexDual - Claude 与 Codex 第三方模型管理器
 
 [English](README.md) · [简体中文](README_zh.md)
 
-ClaudexDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，用于管理第三方模型配置并开启 Developer Mode（开发者模式）。通过隔离实例启动和内置代理服务器，你可以轻松接入各种第三方模型服务商。
+ClaudexDual（原 ClaudeDual）是一款 macOS 桌面应用，用于管理 Claude Desktop 与 Codex 的第三方推理配置、隔离实例和本地代理。两种客户端共享配置列表，可分别设置 API 地址和模型映射。Claude 支持一键开启开发者模式。
+
+产品已更名为 **ClaudexDual**。为保留现有配置、密钥和在线升级兼容性，GitHub 仓库地址及内部 `ClaudeDual` 数据标识保持不变。从旧版 ClaudeDual 手动升级时，请安装 ClaudexDual.app，确认可用后删除旧的 ClaudeDual.app；无需删除用户数据。
 
 ## 📸 界面预览
 
@@ -16,6 +18,7 @@ ClaudexDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，
 
 ### 🔄 隔离实例管理
 - **独立运行**：通过 `--user-data-dir` 参数从主 Claude Desktop 启动完全隔离的实例
+- **Codex 隔离**：使用独立的 `CODEX_HOME` 和桌面数据目录，保留现有 Codex 配置
 - **状态监控**：实时显示实例运行状态、PID 等信息
 - **一键控制**：便捷的启动/停止控制，支持优雅终止
 
@@ -29,7 +32,7 @@ ClaudexDual 是一款专为 Claude Desktop 用户设计的 macOS 桌面应用，
 - **认证转换**：支持多种认证方式：Bearer、x-api-key、anthropic-api-key
 - **端口自适应**：自动检测端口冲突，动态分配可用端口
 
-### 🔄 CC-Switch 模式（新）
+### 🔄 CC-Switch 模式
 - **无缝集成**：直接对接 [CC-Switch](https://github.com/musistudio/ccswitch) 本地网关服务
 - **独立配置**：复用 CC-Switch 内置的模型映射和认证配置
 - **模式切换**：在 CC-Switch 模式和本地代理模式之间自由切换
@@ -66,11 +69,7 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
-    "claude-haiku-4-5-20251001",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6"
+    "claude-haiku-4-5-20251001"
   ]
 }
 ```
@@ -92,10 +91,11 @@ open -n -a /Applications/Claude.app --args --user-data-dir=~/Library/Application
 
 ### 系统要求
 - macOS 13.0 或更高版本
-- 已安装 Claude Desktop
+- 已安装需要使用的 Claude Desktop 或 Codex
+- 内置代理需要 Python 3
 
 ### 安装步骤
-1. 下载最新发布的 DMG 文件
+1. 下载[最新发布的 DMG 文件](https://github.com/saibogoo/ClaudeDual/releases/latest)
 2. 拖入「应用程序」文件夹
 3. 首次运行需在隐私设置中允许
 
@@ -130,7 +130,7 @@ tools/PackageApp.sh
 需要 macOS 13.0+、Swift 工具链（Xcode 命令行工具），以及用于内置代理的 Python 3。
 
 ### 基本使用流程
-1. **检查状态**：确认 Claude Desktop 已安装、开发者模式已开启
+1. **检查状态**：选择 Claude 或 Codex，确认对应客户端已安装；使用 Claude 时开启开发者模式
 2. **创建配置**：在配置页添加你的第三方模型服务商设置
 3. **选择模式**：
    - 本地代理模式：由 ClaudexDual 管理所有配置
@@ -138,14 +138,17 @@ tools/PackageApp.sh
 4. **启动实例**：点击启动按钮，等待隔离实例加载
 5. **开始使用**：在新实例中体验第三方模型
 
-## 📋 支持的模型服务商
+## 📋 上游协议要求
 
-- **DashScope**（通义千问系列）
-- **百炼**（百炼平台）
-- **Kimi**（Moonshot AI）
-- **零一万物**（yi 系列）
-- **智谱 AI**（glm 系列）
-- **以及任何其他兼容 OpenAI 的 API 服务**
+Claude 需要兼容 Anthropic Messages（`/v1/messages`）的服务，Codex 需要兼容 OpenAI Responses（`/v1/responses`）的服务。仅支持 Chat Completions 的 OpenAI 兼容接口并不保证可用；本地代理负责映射和认证，不转换这两种协议。
+
+## 模型映射（v1.3.2）
+
+- Claude：分别设置 Sonnet、Opus、Fable、Haiku 的显示别名和实际请求模型；Subagent 设置未匹配模型的默认目标。
+- 可声明百万上下文模型；实际可用上下文仍取决于上游服务和客户端支持。
+- Codex：独立设置本地模型 ID 和实际请求模型。客户端菜单可能仍显示 `Custom`，映射改变的是实际请求。
+- 从服务端获取模型列表，一键使用列表中的首个模型填入当前客户端的映射。
+- 浏览配置不会主动读取钥匙串，编辑时密钥留空会保留已保存密钥。
 
 ## ⚡ 进阶功能
 
@@ -160,9 +163,9 @@ tools/PackageApp.sh
 
 ## 🛡️ 安全说明
 
-- API 密钥仅保存在本地，不会上传到任何服务器
+- API 密钥保存在 macOS Keychain，发送请求时用于向所配置的上游服务认证
 - 隔离实例确保第三方模型配置不影响主应用
-- 所有网络请求均在本地处理，保护用户数据隐私
+- 本地代理会把请求内容转发给你配置的上游服务；请按该服务的数据政策使用
 
 ## 📚 文档
 
@@ -183,4 +186,4 @@ tools/PackageApp.sh
 
 ---
 
-*ClaudexDual 让你在 Claude 生态中轻松体验各种第三方模型，享受 AI 开发的乐趣！*
+*ClaudexDual 让你在 Claude 与 Codex 中轻松体验各种第三方模型，享受 AI 开发的乐趣！*

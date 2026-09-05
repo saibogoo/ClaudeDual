@@ -14,7 +14,13 @@ Config file format (JSON):
         "target_url": "https://api.example.com/v1",
         "api_key": "sk-...",
         "auth_scheme": "bearer",
-        "model_name": "upstream-model-name"
+        "model_name": "upstream-model-name",
+        "model_names": ["claude-sonnet-5", "claude-opus-5"],
+        "model_mappings": {
+            "claude-sonnet-5": "provider-sonnet-model",
+            "claude-opus-5": "provider-opus-model"
+        },
+        "one_million_models": ["claude-sonnet-5"]
     }
 """
 
@@ -57,12 +63,18 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_models(self) -> None:
         """Return local model metadata for Claude Desktop gateway checks."""
-        models = [
+        default_models = [
             "claude-fable-5",
             "claude-opus-5",
             "claude-sonnet-5",
             "claude-haiku-4-5-20251001",
         ]
+        configured_models = self.config.get("model_names")
+        models = [model for model in configured_models if isinstance(model, str) and model] \
+            if isinstance(configured_models, list) else default_models
+        if not models:
+            models = default_models
+        one_million_models = self.config.get("one_million_models", [])
         self._send_json(200, {
             "object": "list",
             "data": [
@@ -74,6 +86,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                     "owned_by": "claude-dual",
                     "created": 1767225600,
                     "created_at": "2026-01-01T00:00:00Z",
+                    "context_window": 1000000 if model in one_million_models else 200000,
                 }
                 for model in models
             ],
@@ -98,7 +111,12 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             try:
                 data = json.loads(body)
                 if isinstance(data, dict) and 'model' in data:
-                    data['model'] = self.config['model_name']
+                    incoming_model = data['model']
+                    model_mappings = self.config.get('model_mappings', {})
+                    data['model'] = model_mappings.get(
+                        incoming_model,
+                        self.config['model_name'],
+                    )
                     body = json.dumps(data).encode()
             except Exception:
                 pass

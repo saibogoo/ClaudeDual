@@ -56,6 +56,12 @@ class ProxyServerTests(unittest.TestCase):
             "api_key": "upstream-secret",
             "auth_scheme": "bearer",
             "model_name": "mapped-codex-model",
+            "model_names": ["claude-mapped-a", "claude-mapped-b"],
+            "model_mappings": {
+                "claude-mapped-a": "upstream-model-a",
+                "claude-mapped-b": "upstream-model-b",
+            },
+            "one_million_models": ["claude-mapped-a"],
         }
         self.proxy = ReusableTCPServer(("127.0.0.1", 0), PROXY.ProxyHandler)
         self.proxy_thread = threading.Thread(target=self.proxy.serve_forever, daemon=True)
@@ -72,7 +78,7 @@ class ProxyServerTests(unittest.TestCase):
         connection.request(
             "POST",
             "/v1/responses",
-            body=json.dumps({"model": "frontend-alias", "input": "hello"}),
+            body=json.dumps({"model": "claude-mapped-a", "input": "hello"}),
             headers={"Authorization": "Bearer local-token", "Content-Type": "application/json"},
         )
         response = connection.getresponse()
@@ -82,10 +88,39 @@ class ProxyServerTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(payload["status"], "completed")
         self.assertEqual(RecordingUpstream.request_path, "/v1/responses")
-        self.assertEqual(RecordingUpstream.request_body["model"], "mapped-codex-model")
+        self.assertEqual(RecordingUpstream.request_body["model"], "upstream-model-a")
         self.assertEqual(
             RecordingUpstream.request_headers["Authorization"], "Bearer upstream-secret"
         )
+
+    def test_models_endpoint_returns_configured_mapping_names(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.proxy.server_address[1])
+        connection.request("GET", "/v1/models")
+        response = connection.getresponse()
+        payload = json.loads(response.read())
+        connection.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual([model["id"] for model in payload["data"]], ["claude-mapped-a", "claude-mapped-b"])
+        self.assertEqual(payload["first_id"], "claude-mapped-a")
+        self.assertEqual(payload["last_id"], "claude-mapped-b")
+        self.assertEqual(payload["data"][0]["context_window"], 1000000)
+        self.assertEqual(payload["data"][1]["context_window"], 200000)
+
+    def test_unknown_model_uses_fallback_mapping(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.proxy.server_address[1])
+        connection.request(
+            "POST",
+            "/v1/responses",
+            body=json.dumps({"model": "unlisted-model", "input": "hello"}),
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(RecordingUpstream.request_body["model"], "mapped-codex-model")
 
 
 class ProxyConfigurationTests(unittest.TestCase):

@@ -1,8 +1,10 @@
-# ClaudexDual - Claude Desktop Third-Party Model Manager
+# ClaudexDual - Third-Party Model Manager for Claude and Codex
 
 [English](README.md) · [简体中文](README_zh.md)
 
-ClaudexDual is a macOS desktop application designed for Claude Desktop users to manage third-party model configurations and enable Developer Mode. Through isolated instance launching and built-in proxy server, you can easily integrate various third-party model providers.
+ClaudexDual (formerly ClaudeDual) is a macOS desktop app for managing third-party inference profiles, isolated instances, and local proxies for Claude Desktop and Codex. Both clients share a profile list with separate API endpoints and model mappings. Claude Developer Mode can be enabled with one click.
+
+The product is now named **ClaudexDual**. The GitHub repository URL and internal `ClaudeDual` identifiers remain unchanged to preserve existing settings, credentials, and updates. When manually upgrading from ClaudeDual, install ClaudexDual.app and remove the old ClaudeDual.app after verifying the new app works; keep your user data.
 
 ## 📸 Screenshots
 
@@ -16,6 +18,7 @@ ClaudexDual is a macOS desktop application designed for Claude Desktop users to 
 
 ### 🔄 Isolated Instance Management
 - **Independent Running**: Launch completely isolated instances from main Claude Desktop via `--user-data-dir` parameter
+- **Codex Isolation**: Uses a separate `CODEX_HOME` and desktop data directory, preserving existing Codex settings
 - **Status Monitoring**: Real-time display of instance running status, PID and more
 - **One-Click Control**: Convenient start/stop control with graceful termination
 
@@ -29,7 +32,7 @@ ClaudexDual is a macOS desktop application designed for Claude Desktop users to 
 - **Authentication Conversion**: Supports multiple authentication methods: Bearer, x-api-key, anthropic-api-key
 - **Port Adaptation**: Automatically detects port conflicts, dynamically allocates available ports
 
-### 🔄 CC-Switch Mode (New)
+### 🔄 CC-Switch Mode
 - **Seamless Integration**: Direct integration with [CC-Switch](https://github.com/musistudio/ccswitch) local gateway service
 - **Independent Configuration**: Uses CC-Switch's built-in model mapping and authentication configuration
 - **Mode Switching**: Freely switch between CC-Switch mode and local proxy mode
@@ -64,11 +67,7 @@ The app generates and writes configuration files to the isolated instance's `con
     "claude-fable-5",
     "claude-opus-5",
     "claude-sonnet-5",
-    "claude-haiku-4-5-20251001",
-    "claude-opus-4-8",
-    "claude-opus-4-7",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6"
+    "claude-haiku-4-5-20251001"
   ]
 }
 ```
@@ -90,10 +89,11 @@ When CC-Switch mode is enabled:
 
 ### System Requirements
 - macOS 13.0 or higher
-- Claude Desktop installed
+- Claude Desktop or Codex installed, depending on the client you use
+- Python 3 for the built-in proxy
 
 ### Installation Steps
-1. Download the latest released DMG file
+1. Download the [latest released DMG](https://github.com/saibogoo/ClaudeDual/releases/latest)
 2. Drag to Applications folder
 3. First run requires allowing in privacy settings
 
@@ -128,7 +128,7 @@ tools/PackageApp.sh
 Requires macOS 13.0+, Swift toolchain (Xcode Command Line Tools), and Python 3 for the built-in proxy.
 
 ### Basic Usage Flow
-1. **Check Status**: Confirm Claude Desktop is installed and Developer Mode is enabled
+1. **Check Status**: Select Claude or Codex and confirm that client is installed; enable Developer Mode when using Claude
 2. **Create Configuration**: Add your third-party model provider settings in configuration page
 3. **Select Mode**:
    - Local Proxy Mode: ClaudexDual manages all configurations
@@ -136,14 +136,17 @@ Requires macOS 13.0+, Swift toolchain (Xcode Command Line Tools), and Python 3 f
 4. **Start Instance**: Click start button, wait for isolated instance to load
 5. **Start Using**: Experience third-party models in the new instance
 
-## 📋 Supported Model Providers
+## 📋 Upstream API Requirements
 
-- **DashScope** (Qwen series)
-- **Bailian** (Bailian Platform)
-- **Kimi** (Moonshot AI)
-- **Lingyi Wanwu** (yi series)
-- **Zhipu AI** (glm series)
-- **And any other OpenAI-compatible API services**
+Claude requires Anthropic Messages compatibility (`/v1/messages`); Codex requires OpenAI Responses compatibility (`/v1/responses`). An OpenAI-compatible service that only supports Chat Completions is not sufficient. The local proxy handles mapping and authentication, not conversion between these protocols.
+
+## Model Mapping (v1.3.2)
+
+- Claude: configure display aliases and upstream models for Sonnet, Opus, Fable, and Haiku; use Subagent as the fallback target for unmatched models.
+- Declare one-million-token context support; actual context availability depends on the upstream service and client.
+- Codex: configure an independent local model ID and upstream request model. The client menu may still show `Custom`; mapping controls the actual request.
+- Fetch the provider model list and apply its first model to the selected client with one click.
+- Browsing profiles does not proactively read Keychain; leaving the key blank while editing preserves the saved credential.
 
 ## ⚡ Advanced Features
 
@@ -158,9 +161,9 @@ Use CC-Switch as the upstream gateway when you want model routing, authenticatio
 
 ## 🛡️ Security Notice
 
-- API keys are stored locally only, not uploaded to any server
+- API keys are stored in macOS Keychain and used to authenticate requests to your configured upstream service
 - Isolated instances ensure third-party model configurations don't affect main app
-- All network requests are processed locally, protecting user data privacy
+- The local proxy forwards request content to your configured upstream service; its data policies apply
 
 ## 📚 Documentation
 
@@ -181,4 +184,4 @@ Welcome to submit Issues and Pull Requests to improve ClaudexDual!
 
 ---
 
-*ClaudexDual lets you easily experience various third-party models in the Claude ecosystem and enjoy the fun of AI development!*
+*ClaudexDual lets you easily experience various third-party models in Claude and Codex and enjoy the fun of AI development!*

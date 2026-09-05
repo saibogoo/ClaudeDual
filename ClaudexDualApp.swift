@@ -34,6 +34,17 @@ enum ManagedClient: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Config Profile Model
 
+struct ModelMapping: Identifiable, Codable, Equatable {
+    var role: String
+    var displayName: String
+    var requestModel: String
+    var supportsOneMillion: Bool
+
+    var id: String { role }
+
+    static let roles = ["Sonnet", "Opus", "Fable", "Haiku", "Subagent"]
+}
+
 struct ConfigProfile: Identifiable, Codable, Equatable {
     var id: UUID
     var name: String
@@ -41,6 +52,15 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
     var apiKey: String
     var authScheme: String?
     var modelName: String
+    // Legacy comma-separated aliases retained for backwards-compatible decode.
+    var modelMappingNames: String? = nil
+    // Role-based aliases, upstream request models, and context declarations.
+    var modelMappings: [ModelMapping]? = nil
+    // Codex has one independent local model ID and upstream target. Codex
+    // Desktop currently renders custom providers as "Custom" instead of using
+    // this ID as a user-facing model label.
+    var codexDisplayName: String? = nil
+    var codexRequestModel: String? = nil
     var allowedHosts: String
 
     // Proxy mode: nil or "localProxy" = built-in proxy, "ccSwitch" = CC-Switch gateway
@@ -61,6 +81,12 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
         "claude-opus-5",
         "claude-sonnet-5",
         "claude-haiku-4-5-20251001"
+    ]
+    static let defaultRoleDisplayNames = [
+        "Sonnet": "claude-sonnet-5",
+        "Opus": "claude-opus-5",
+        "Fable": "claude-fable-5",
+        "Haiku": "claude-haiku-4-5-20251001"
     ]
 
     static func makeDefault() -> ConfigProfile {
@@ -142,6 +168,83 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
         return Self.defaultUpstreamModel
     }
 
+    var effectiveModelMappings: [ModelMapping] {
+        let stored = modelMappings ?? []
+        if !stored.isEmpty {
+            return ModelMapping.roles.map { role in
+                if var mapping = stored.first(where: { $0.role == role }) {
+                    mapping.displayName = mapping.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    mapping.requestModel = mapping.requestModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if mapping.requestModel.isEmpty { mapping.requestModel = effectiveUpstreamModel }
+                    if role == "Subagent" { mapping.displayName = "" }
+                    return mapping
+                }
+                return defaultModelMapping(for: role)
+            }
+        }
+
+        let legacyNames = modelMappingNames?
+            .split(whereSeparator: { $0 == "," || $0 == "\n" || $0 == "\r" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty } ?? []
+        var legacyIndex = 0
+        return ModelMapping.roles.map { role in
+            var mapping = defaultModelMapping(for: role)
+            if role != "Subagent", legacyIndex < legacyNames.count {
+                mapping.displayName = legacyNames[legacyIndex]
+                legacyIndex += 1
+            }
+            return mapping
+        }
+    }
+
+    private func defaultModelMapping(for role: String) -> ModelMapping {
+        ModelMapping(
+            role: role,
+            displayName: role == "Subagent" ? "" : (Self.defaultRoleDisplayNames[role] ?? ""),
+            requestModel: effectiveUpstreamModel,
+            supportsOneMillion: false
+        )
+    }
+
+    var effectiveModelMappingNames: [String] {
+        let names: [String] = effectiveModelMappings.compactMap { mapping -> String? in
+            guard mapping.role != "Subagent", !mapping.displayName.isEmpty else { return nil }
+            return mapping.displayName
+        }
+        return names.reduce(into: [String]()) { names, name in
+            if !names.contains(name) { names.append(name) }
+        }
+    }
+
+    var effectiveModelMappingTargets: [String: String] {
+        effectiveModelMappings.reduce(into: [String: String]()) { result, mapping in
+            guard mapping.role != "Subagent", !mapping.displayName.isEmpty else { return }
+            result[mapping.displayName] = mapping.requestModel
+        }
+    }
+
+    var effectiveOneMillionModels: [String] {
+        effectiveModelMappings.compactMap { mapping in
+            guard mapping.role != "Subagent", mapping.supportsOneMillion, !mapping.displayName.isEmpty else { return nil }
+            return mapping.displayName
+        }
+    }
+
+    var effectiveFallbackModel: String {
+        effectiveModelMappings.first(where: { $0.role == "Subagent" })?.requestModel ?? effectiveUpstreamModel
+    }
+
+    var effectiveCodexDisplayName: String {
+        let configured = codexDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return configured.isEmpty ? effectiveUpstreamModel : configured
+    }
+
+    var effectiveCodexRequestModel: String {
+        let configured = codexRequestModel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return configured.isEmpty ? effectiveUpstreamModel : configured
+    }
+
     var effectiveProxyMode: String {
         proxyMode ?? "localProxy"
     }
@@ -157,6 +260,14 @@ struct ConfigProfile: Identifiable, Codable, Equatable {
 
     var isDirectMode: Bool {
         effectiveProxyMode == "direct"
+    }
+
+    var effectiveClaudeClientModelNames: [String] {
+        isDirectMode ? [effectiveUpstreamModel] : effectiveModelMappingNames
+    }
+
+    var effectiveCodexClientModel: String {
+        isDirectMode ? effectiveCodexRequestModel : effectiveCodexDisplayName
     }
 
     var maskedApiKey: String {
@@ -1160,6 +1271,10 @@ class ClaudexDualManager: ObservableObject {
             // profile, avoiding unsolicited Keychain prompts at startup.
             normalized.apiKey = profile.effectiveApiKey
             normalized.modelName = profile.effectiveUpstreamModel
+            normalized.modelMappingNames = profile.modelMappingNames?.trimmingCharacters(in: .whitespacesAndNewlines)
+            normalized.modelMappings = profile.effectiveModelMappings
+            normalized.codexDisplayName = profile.effectiveCodexDisplayName
+            normalized.codexRequestModel = profile.effectiveCodexRequestModel
             normalized.allowedHosts = profile.allowedHosts.trimmingCharacters(in: .whitespacesAndNewlines)
             normalized.client = nil
             if let url = profile.ccSwitchUrl {
@@ -1178,7 +1293,7 @@ class ClaudexDualManager: ObservableObject {
         }
     }
 
-    func addProfile(name: String, apiBaseUrl: String, apiKey: String, authScheme: String, modelName: String, allowedHosts: String, proxyMode: String? = nil, ccSwitchUrl: String? = nil, claudeApiBaseUrl: String? = nil, codexApiBaseUrl: String? = nil) -> ConfigProfile {
+    func addProfile(name: String, apiBaseUrl: String, apiKey: String, authScheme: String, modelName: String, allowedHosts: String, proxyMode: String? = nil, ccSwitchUrl: String? = nil, claudeApiBaseUrl: String? = nil, codexApiBaseUrl: String? = nil, modelMappingNames: String? = nil, modelMappings: [ModelMapping]? = nil, codexDisplayName: String? = nil, codexRequestModel: String? = nil) -> ConfigProfile {
         var profile = ConfigProfile(
             id: UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1186,6 +1301,10 @@ class ClaudexDualManager: ObservableObject {
             apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             authScheme: authScheme,
             modelName: modelName.trimmingCharacters(in: .whitespacesAndNewlines),
+            modelMappingNames: modelMappingNames?.trimmingCharacters(in: .whitespacesAndNewlines),
+            modelMappings: modelMappings,
+            codexDisplayName: codexDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+            codexRequestModel: codexRequestModel?.trimmingCharacters(in: .whitespacesAndNewlines),
             allowedHosts: allowedHosts.trimmingCharacters(in: .whitespacesAndNewlines),
             proxyMode: proxyMode ?? "localProxy",
             ccSwitchUrl: ccSwitchUrl,
@@ -1203,13 +1322,17 @@ class ClaudexDualManager: ObservableObject {
         return profile
     }
 
-    func updateProfile(id: UUID, name: String, apiBaseUrl: String, apiKey: String, authScheme: String, modelName: String, allowedHosts: String, proxyMode: String?, ccSwitchUrl: String?, claudeApiBaseUrl: String? = nil, codexApiBaseUrl: String? = nil) {
+    func updateProfile(id: UUID, name: String, apiBaseUrl: String, apiKey: String, authScheme: String, modelName: String, allowedHosts: String, proxyMode: String?, ccSwitchUrl: String?, claudeApiBaseUrl: String? = nil, codexApiBaseUrl: String? = nil, modelMappingNames: String? = nil, modelMappings: [ModelMapping]? = nil, codexDisplayName: String? = nil, codexRequestModel: String? = nil) {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else { return }
         profiles[index].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         profiles[index].apiBaseUrl = apiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         profiles[index].apiKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         profiles[index].authScheme = authScheme
         profiles[index].modelName = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        profiles[index].modelMappingNames = modelMappingNames?.trimmingCharacters(in: .whitespacesAndNewlines)
+        profiles[index].modelMappings = modelMappings
+        profiles[index].codexDisplayName = codexDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        profiles[index].codexRequestModel = codexRequestModel?.trimmingCharacters(in: .whitespacesAndNewlines)
         profiles[index].allowedHosts = allowedHosts.trimmingCharacters(in: .whitespacesAndNewlines)
         profiles[index].proxyMode = proxyMode
         profiles[index].ccSwitchUrl = ccSwitchUrl
@@ -1395,7 +1518,10 @@ class ClaudexDualManager: ObservableObject {
             "port": proxyPort,
             "target_url": profile.effectiveClaudeApiBaseUrl,
             "auth_scheme": profile.effectiveAuthScheme,
-            "model_name": profile.effectiveUpstreamModel
+            "model_name": profile.effectiveFallbackModel,
+            "model_names": profile.effectiveModelMappingNames,
+            "model_mappings": profile.effectiveModelMappingTargets,
+            "one_million_models": profile.effectiveOneMillionModels
         ]
         let proxyApiKey = apiKey(for: profile)
         if !proxyApiKey.isEmpty {
@@ -1502,7 +1628,10 @@ class ClaudexDualManager: ObservableObject {
             "port": codexProxyPort,
             "target_url": profile.effectiveCodexApiBaseUrl,
             "auth_scheme": profile.effectiveAuthScheme,
-            "model_name": profile.effectiveUpstreamModel
+            "model_name": profile.effectiveCodexRequestModel,
+            "model_names": [profile.effectiveCodexDisplayName],
+            "model_mappings": [profile.effectiveCodexDisplayName: profile.effectiveCodexRequestModel],
+            "one_million_models": []
         ]
         let proxyApiKey = apiKey(for: profile)
         if !proxyApiKey.isEmpty {
@@ -1708,7 +1837,7 @@ class ClaudexDualManager: ObservableObject {
             "inferenceGatewayBaseUrl": gatewayUrl,
             "inferenceGatewayApiKey": gatewayApiKey,
             "inferenceGatewayAuthScheme": gatewayAuthScheme,
-            "inferenceModels": ConfigProfile.defaultInferenceModels
+            "inferenceModels": profile.effectiveClaudeClientModelNames
         ]
 
         let configContent: String
@@ -1780,9 +1909,10 @@ class ClaudexDualManager: ObservableObject {
         } else {
             baseURL = "http://127.0.0.1:\(codexProxyPort)/v1"
         }
+        let clientModel = profile.effectiveCodexClientModel
         var lines = [
             "# Generated by ClaudexDual. This file belongs only to the isolated Codex instance.",
-            "model = \"\(tomlString(profile.effectiveUpstreamModel))\"",
+            "model = \"\(tomlString(clientModel))\"",
             "model_provider = \"\(providerId)\"",
             "cli_auth_credentials_store = \"file\"",
             "",
@@ -3208,7 +3338,11 @@ struct ConfigurationTab: View {
                             proxyMode: newProfile.proxyMode,
                             ccSwitchUrl: newProfile.ccSwitchUrl,
                             claudeApiBaseUrl: newProfile.claudeApiBaseUrl,
-                            codexApiBaseUrl: newProfile.codexApiBaseUrl
+                            codexApiBaseUrl: newProfile.codexApiBaseUrl,
+                            modelMappingNames: newProfile.modelMappingNames,
+                            modelMappings: newProfile.modelMappings,
+                            codexDisplayName: newProfile.codexDisplayName,
+                            codexRequestModel: newProfile.codexRequestModel
                         )
                         manager.activateProfile(id: profile.id)
                         isNewProfile = false
@@ -3237,7 +3371,11 @@ struct ConfigurationTab: View {
                             proxyMode: updated.proxyMode,
                             ccSwitchUrl: updated.ccSwitchUrl,
                             claudeApiBaseUrl: updated.claudeApiBaseUrl,
-                            codexApiBaseUrl: updated.codexApiBaseUrl
+                            codexApiBaseUrl: updated.codexApiBaseUrl,
+                            modelMappingNames: updated.modelMappingNames,
+                            modelMappings: updated.modelMappings,
+                            codexDisplayName: updated.codexDisplayName,
+                            codexRequestModel: updated.codexRequestModel
                         )
                     },
                     onCancel: nil
@@ -3327,6 +3465,13 @@ struct ProfileEditor: View {
     @State private var apiKey: String = ""
     @State private var authScheme: String = "bearer"
     @State private var modelName: String = ""
+    @State private var modelMappings: [ModelMapping] = []
+    @State private var codexDisplayName: String = ""
+    @State private var codexRequestModel: String = ""
+    @State private var selectedMappingClient: ManagedClient = .claude
+    @State private var fetchedModelNames: [String] = []
+    @State private var modelFetchMessage: String = ""
+    @State private var isFetchingModels = false
     @State private var allowedHosts: String = ""
     @State private var claudeProxyPort: String = ""
     @State private var codexProxyPort: String = ""
@@ -3417,7 +3562,8 @@ struct ProfileEditor: View {
     private var modeFields: some View {
         if proxyMode == "ccSwitch" {
             ConfigField(title: "CC Switch 地址", prompt: "http://127.0.0.1:15721", text: $ccSwitchUrl)
-            Text("模型映射和认证在 CC Switch 中配置，此处只需填写地址。Model ID 须为 Anthropic 风格（如 claude-opus-4-7）。")
+            modelMappingEditor
+            Text("CC Switch 模式下，实际请求模型还需要在 CC Switch 中配置为可用模型。")
                 .font(.system(size: 11))
                 .foregroundColor(AppTheme.muted)
         } else {
@@ -3436,15 +3582,274 @@ struct ProfileEditor: View {
                 .foregroundColor(AppTheme.muted)
             apiKeyField
             authSchemeField
-            ConfigField(
-                title: "上游模型名称",
-                prompt: ConfigProfile.defaultUpstreamModel,
-                text: $modelName
-            )
+            if proxyMode == "direct" {
+                ConfigField(
+                    title: "Claude 实际请求模型",
+                    prompt: ConfigProfile.defaultUpstreamModel,
+                    text: $modelName
+                )
+                ConfigField(
+                    title: "Codex 实际请求模型",
+                    prompt: ConfigProfile.defaultUpstreamModel,
+                    text: $codexRequestModel
+                )
+            } else {
+                modelMappingEditor
+            }
             if proxyMode == "localProxy" {
                 proxyPortField
             }
         }
+    }
+
+    private var modelMappingEditor: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("模型映射")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(selectedMappingClient == .claude
+                         ? "Claude 按角色映射模型；1M 只是上下文能力声明。"
+                         : "Codex 使用独立的本地模型 ID 和实际请求模型。")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.muted)
+                }
+                Spacer()
+                Button(action: applyOneClickModelMapping) {
+                    Label("一键设置", systemImage: "wand.and.stars")
+                }
+                .buttonStyle(.bordered)
+                Button(action: fetchModelList) {
+                    Label(isFetchingModels ? "获取中…" : "获取模型列表", systemImage: "arrow.down.to.line")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isFetchingModels)
+            }
+
+            Picker("客户端", selection: $selectedMappingClient) {
+                Text("Claude").tag(ManagedClient.claude)
+                Text("Codex").tag(ManagedClient.codex)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 260)
+
+            if selectedMappingClient == .claude {
+                claudeModelMappingGrid
+            } else {
+                codexModelMappingGrid
+            }
+
+            if !modelFetchMessage.isEmpty {
+                Text(modelFetchMessage)
+                    .font(.system(size: 10))
+                    .foregroundColor(modelFetchMessage.hasPrefix("获取失败") ? AppTheme.danger : AppTheme.muted)
+            }
+        }
+        .padding(14)
+        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppTheme.border, lineWidth: 1))
+    }
+
+    private var claudeModelMappingGrid: some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+            GridRow {
+                mappingHeader("模型角色", width: 90)
+                mappingHeader("显示名称")
+                mappingHeader("实际请求模型")
+                mappingHeader("声明支持 1M", width: 94)
+            }
+
+            ForEach($modelMappings) { $mapping in
+                GridRow {
+                    Text(mapping.role)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(AppTheme.inkSecondary)
+                        .padding(.horizontal, 10)
+                        .frame(width: 90, alignment: .leading)
+                        .frame(minHeight: 34, alignment: .leading)
+                        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+
+                    if mapping.role == "Subagent" {
+                        Text("不显示在模型菜单")
+                            .font(.system(size: 12))
+                            .foregroundColor(AppTheme.muted)
+                            .padding(.horizontal, 10)
+                            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+                    } else {
+                        TextField("模型显示名称", text: $mapping.displayName)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12))
+                            .controlSize(.large)
+                            .frame(minWidth: 150, maxWidth: .infinity)
+                    }
+
+                    TextField("上游模型 ID", text: $mapping.requestModel)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                        .controlSize(.large)
+                        .frame(minWidth: 150, maxWidth: .infinity)
+
+                    Toggle("1M", isOn: $mapping.supportsOneMillion)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                        .frame(width: 94, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private var codexModelMappingGrid: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
+                GridRow {
+                    mappingHeader("客户端", width: 90)
+                    mappingHeader("本地模型 ID")
+                    mappingHeader("实际请求模型")
+                }
+                GridRow {
+                    Text("Codex")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(AppTheme.inkSecondary)
+                        .padding(.horizontal, 10)
+                        .frame(width: 90, alignment: .leading)
+                        .frame(minHeight: 34, alignment: .leading)
+                        .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
+                    TextField("发送给本地代理的模型 ID", text: $codexDisplayName)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                        .controlSize(.large)
+                        .frame(minWidth: 190, maxWidth: .infinity)
+                    TextField("Codex 上游模型 ID", text: $codexRequestModel)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                        .controlSize(.large)
+                        .frame(minWidth: 190, maxWidth: .infinity)
+                }
+            }
+
+            Label("Codex Desktop 当前会把自定义模型显示为 Custom，并保留内置模型列表；这里的映射会改变实际请求，不会改写客户端菜单名称。", systemImage: "info.circle")
+                .font(.system(size: 10))
+                .foregroundColor(AppTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func mappingHeader(_ title: String, width: CGFloat? = nil) -> some View {
+        Text(title)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(AppTheme.muted)
+            .frame(width: width, alignment: .leading)
+    }
+
+    private func defaultModelMappings(upstreamModel: String) -> [ModelMapping] {
+        ModelMapping.roles.map { role in
+            ModelMapping(
+                role: role,
+                displayName: role == "Subagent" ? "" : (ConfigProfile.defaultRoleDisplayNames[role] ?? ""),
+                requestModel: upstreamModel,
+                supportsOneMillion: false
+            )
+        }
+    }
+
+    private func applyOneClickModelMapping() {
+        let sourceModel = selectedMappingClient == .claude ? modelName : codexRequestModel
+        let currentModel = sourceModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let suggestedModel = fetchedModelNames.first
+            ?? (currentModel.isEmpty ? ConfigProfile.defaultUpstreamModel : currentModel)
+        if selectedMappingClient == .claude {
+            for index in modelMappings.indices {
+                modelMappings[index].requestModel = suggestedModel
+                if modelMappings[index].role != "Subagent" {
+                    modelMappings[index].displayName = suggestedModel
+                }
+            }
+            modelFetchMessage = "已将 Claude 所有角色设置为 \(suggestedModel)"
+        } else {
+            codexDisplayName = suggestedModel
+            codexRequestModel = suggestedModel
+            modelFetchMessage = "已将 Codex 设置为 \(suggestedModel)"
+        }
+    }
+
+    private func fetchModelList() {
+        let rawBaseUrl: String
+        if proxyMode == "ccSwitch" {
+            rawBaseUrl = ccSwitchUrl
+        } else {
+            rawBaseUrl = selectedMappingClient == .claude ? claudeApiBaseUrl : codexApiBaseUrl
+        }
+        guard let endpoint = modelsEndpoint(from: rawBaseUrl) else {
+            modelFetchMessage = "获取失败：请先填写有效的模型服务地址"
+            return
+        }
+
+        isFetchingModels = true
+        modelFetchMessage = ""
+        let enteredKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = proxyMode == "ccSwitch"
+            ? ""
+            : (enteredKey.isEmpty ? (profile.map { manager.apiKey(for: $0) } ?? "") : enteredKey)
+        let scheme = authScheme
+        Task {
+            do {
+                var request = URLRequest(url: endpoint)
+                request.timeoutInterval = 30
+                if !key.isEmpty {
+                    if scheme == "x-api-key" {
+                        request.setValue(key, forHTTPHeaderField: "x-api-key")
+                    } else if scheme == "anthropic-api-key" {
+                        request.setValue(key, forHTTPHeaderField: "anthropic-api-key")
+                    } else {
+                        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+                    }
+                }
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                let object = try JSONSerialization.jsonObject(with: data)
+                let dictionary = object as? [String: Any]
+                let entries = dictionary?["data"] as? [[String: Any]] ?? []
+                let names = entries.compactMap { $0["id"] as? String }
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .reduce(into: [String]()) { result, name in
+                        if !result.contains(name) { result.append(name) }
+                    }
+                guard !names.isEmpty else { throw URLError(.cannotParseResponse) }
+                await MainActor.run {
+                    fetchedModelNames = names
+                    modelFetchMessage = "已获取 \(names.count) 个模型；一键设置将使用 \(names[0])"
+                    isFetchingModels = false
+                }
+            } catch {
+                await MainActor.run {
+                    modelFetchMessage = "获取失败：\(error.localizedDescription)"
+                    isFetchingModels = false
+                }
+            }
+        }
+    }
+
+    private func modelsEndpoint(from rawValue: String) -> URL? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed), components.host != nil else { return nil }
+        var path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if path.hasSuffix("models") {
+            // Keep an explicitly configured models endpoint.
+        } else if path.hasSuffix("v1") {
+            path += "/models"
+        } else {
+            path += path.isEmpty ? "v1/models" : "/v1/models"
+        }
+        components.path = "/" + path
+        return components.url
     }
 
     private var apiKeyField: some View {
@@ -3460,7 +3865,7 @@ struct ProfileEditor: View {
                 }
                 .textFieldStyle(.roundedBorder)
 
-                Button(action: { showApiKey.toggle() }) {
+                Button(action: toggleApiKeyVisibility) {
                     Image(systemName: showApiKey ? "eye.slash" : "eye")
                         .foregroundColor(AppTheme.muted)
                         .frame(width: 24, height: 24)
@@ -3468,7 +3873,17 @@ struct ProfileEditor: View {
                 .buttonStyle(.plain)
                 .help(showApiKey ? "隐藏 API Key" : "显示 API Key")
             }
+            Text(profile == nil ? "密钥会安全保存到 macOS Keychain。" : "留空不会修改已保存密钥；只有显示密钥、获取模型或启动实例时才会读取 Keychain。")
+                .font(.system(size: 10))
+                .foregroundColor(AppTheme.muted)
         }
+    }
+
+    private func toggleApiKeyVisibility() {
+        if !showApiKey, apiKey.isEmpty, let profile {
+            apiKey = manager.apiKey(for: profile)
+        }
+        showApiKey.toggle()
     }
 
     private var authSchemeField: some View {
@@ -3572,9 +3987,19 @@ struct ProfileEditor: View {
             name = p.name
             claudeApiBaseUrl = p.effectiveClaudeApiBaseUrl
             codexApiBaseUrl = p.effectiveCodexApiBaseUrl
-            apiKey = manager.apiKey(for: p)
+            // Browsing profiles must not trigger a Keychain authorization
+            // prompt. Blank means "keep the saved key" until an explicit
+            // reveal, fetch, or launch action needs the credential.
+            apiKey = p.effectiveApiKey
+            showApiKey = false
             authScheme = p.effectiveAuthScheme
             modelName = p.effectiveUpstreamModel
+            modelMappings = p.effectiveModelMappings
+            codexDisplayName = p.effectiveCodexDisplayName
+            codexRequestModel = p.effectiveCodexRequestModel
+            selectedMappingClient = .claude
+            fetchedModelNames = []
+            modelFetchMessage = ""
             allowedHosts = p.allowedHosts
             proxyMode = p.effectiveProxyMode
             ccSwitchUrl = p.effectiveCcSwitchUrl
@@ -3583,8 +4008,15 @@ struct ProfileEditor: View {
             claudeApiBaseUrl = ""
             codexApiBaseUrl = ""
             apiKey = ""
+            showApiKey = false
             authScheme = "bearer"
             modelName = ConfigProfile.defaultUpstreamModel
+            modelMappings = defaultModelMappings(upstreamModel: ConfigProfile.defaultUpstreamModel)
+            codexDisplayName = ConfigProfile.defaultUpstreamModel
+            codexRequestModel = ConfigProfile.defaultUpstreamModel
+            selectedMappingClient = .claude
+            fetchedModelNames = []
+            modelFetchMessage = ""
             allowedHosts = "*"
             proxyMode = "localProxy"
             ccSwitchUrl = ConfigProfile.defaultCcSwitchUrl
@@ -3604,6 +4036,25 @@ struct ProfileEditor: View {
             }
         }
 
+        let normalizedMappings = modelMappings.map { mapping in
+            var normalized = mapping
+            normalized.displayName = mapping.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            normalized.requestModel = mapping.requestModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if normalized.requestModel.isEmpty { normalized.requestModel = ConfigProfile.defaultUpstreamModel }
+            if normalized.role == "Subagent" { normalized.displayName = "" }
+            return normalized
+        }
+        let directModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackModel = proxyMode == "direct"
+            ? directModel
+            : (normalizedMappings.first(where: { $0.role == "Subagent" })?.requestModel ?? directModel)
+        let visibleMappingNames = normalizedMappings
+            .filter { $0.role != "Subagent" && !$0.displayName.isEmpty }
+            .map(\.displayName)
+            .joined(separator: ", ")
+        let normalizedCodexDisplayName = codexDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCodexRequestModel = codexRequestModel.trimmingCharacters(in: .whitespacesAndNewlines)
+
         let updated = ConfigProfile(
             id: profile?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "未命名配置" : name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -3612,7 +4063,11 @@ struct ProfileEditor: View {
             apiBaseUrl: claudeApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines),
             apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines),
             authScheme: authScheme,
-            modelName: modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ConfigProfile.defaultUpstreamModel : modelName,
+            modelName: fallbackModel.isEmpty ? ConfigProfile.defaultUpstreamModel : fallbackModel,
+            modelMappingNames: visibleMappingNames,
+            modelMappings: normalizedMappings,
+            codexDisplayName: normalizedCodexDisplayName.isEmpty ? normalizedCodexRequestModel : normalizedCodexDisplayName,
+            codexRequestModel: normalizedCodexRequestModel.isEmpty ? ConfigProfile.defaultUpstreamModel : normalizedCodexRequestModel,
             allowedHosts: allowedHosts.trimmingCharacters(in: .whitespacesAndNewlines),
             proxyMode: proxyMode,
             ccSwitchUrl: ccSwitchUrl.trimmingCharacters(in: .whitespacesAndNewlines),
