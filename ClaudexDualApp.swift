@@ -1226,6 +1226,8 @@ class ClaudexDualManager: ObservableObject {
     private let legacyCodexActiveProfileKey = "ck.codexActiveProfileId"
     private let proxyPortKey = "ck.proxyPort"
     private let codexProxyPortKey = "ck.codexProxyPort"
+    private let splitUICheckDefaultsDomain = "com.local.ClaudeDual.SplitUICheck"
+    private let splitUICheckMigrationKey = "ck.didMigrateSplitUICheckProfiles"
     private let legacyDefaultsDomains = [
         "com.local.ClaudeDual",
         "com.claudedual.app",
@@ -1292,6 +1294,8 @@ class ClaudexDualManager: ObservableObject {
     // MARK: - Profile Management
 
     private func loadProfiles() {
+        migrateSplitUICheckProfilesIfNeeded()
+
         let loaded = loadProfilesFromDefaults(defaults)
         let legacyLoaded = bestLegacyProfiles()
         let selected = shouldPreferLegacyProfiles(current: loaded?.profiles, legacy: legacyLoaded?.profiles) ? legacyLoaded : loaded
@@ -1319,6 +1323,57 @@ class ClaudexDualManager: ObservableObject {
         }
 
         saveProfilesToDefaults()
+    }
+
+    // Some earlier ClaudexDual builds were launched with an isolated bundle
+    // identifier for split-UI checks. UserDefaults.standard then stored the
+    // real profiles under that identifier's domain. Merge that one-time store
+    // into the canonical bundle domain before loading, preserving profile IDs
+    // (and therefore their Keychain API keys) and the prior active selection.
+    private func migrateSplitUICheckProfilesIfNeeded() {
+        guard !defaults.bool(forKey: splitUICheckMigrationKey),
+              let legacyStore = UserDefaults(suiteName: splitUICheckDefaultsDomain),
+              let legacy = loadProfilesFromDefaults(legacyStore) else {
+            return
+        }
+
+        let current = loadProfilesFromDefaults(defaults)
+        var merged = legacy.profiles
+        for profile in current?.profiles ?? [] {
+            if let index = merged.firstIndex(where: { $0.id == profile.id }) {
+                // Keep edits made in the canonical store if the profile exists
+                // in both domains; use the legacy order for the visible list.
+                merged[index] = profile
+            } else {
+                merged.append(profile)
+            }
+        }
+
+        guard let data = try? JSONEncoder().encode(merged), !merged.isEmpty else {
+            return
+        }
+        defaults.set(data, forKey: profilesKey)
+
+        let validLegacyActiveId = legacy.activeProfileId.flatMap { id in
+            merged.contains(where: { $0.id == id }) ? id : nil
+        }
+        let validCurrentActiveId = current?.activeProfileId.flatMap { id in
+            merged.contains(where: { $0.id == id }) ? id : nil
+        }
+        if let activeId = validLegacyActiveId ?? validCurrentActiveId ?? merged.first?.id {
+            defaults.set(activeId.uuidString, forKey: activeProfileKey)
+        }
+
+        if let port = legacy.proxyPort, port > 1024 && port < 65535 {
+            defaults.set(port, forKey: proxyPortKey)
+        }
+        let legacyCodexPort = legacyStore.integer(forKey: codexProxyPortKey)
+        if legacyCodexPort > 1024 && legacyCodexPort < 65535 {
+            defaults.set(legacyCodexPort, forKey: codexProxyPortKey)
+        }
+
+        defaults.set(true, forKey: splitUICheckMigrationKey)
+        NSLog("[CD] Migrated %d profiles from split-UI preferences", merged.count)
     }
 
     private func loadProfilesFromDefaults(_ store: UserDefaults) -> (profiles: [ConfigProfile], activeProfileId: UUID?, proxyPort: Int?)? {
