@@ -998,6 +998,28 @@ struct ClaudexDualApp: App {
     }
 }
 
+extension View {
+    /// One width rule for every tab, so switching tabs cannot shift the
+    /// content sideways: capped, and pinned to the top-left of whatever
+    /// space is left over.
+    func pageContent() -> some View {
+        self
+            .frame(maxWidth: 1_480, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// `focusEffectDisabled()` only exists on macOS 14+, and the deployment
+    /// target is 13.0.
+    @ViewBuilder
+    func withoutFocusRing() -> some View {
+        if #available(macOS 14.0, *) {
+            self.focusEffectDisabled()
+        } else {
+            self
+        }
+    }
+}
+
 // MARK: - Tab Enumeration
 
 enum AppTab: String, CaseIterable {
@@ -2893,12 +2915,19 @@ struct ContentView: View {
                     AboutTab(updateManager: updateManager)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(AppTheme.canvas)
         }
         .tint(AppTheme.accent)
+        // SwiftUI hands launch focus to the first focusable control, which
+        // painted a blue ring over whatever happened to come first (a sidebar
+        // tab, then the appearance menu). Buttons and menus here show their
+        // own selected state, so suppress the ring app-wide.
+        .withoutFocusRing()
         .preferredColorScheme(AppAppearance(rawValue: appearancePreference)?.colorScheme)
-        .frame(minWidth: 1040, minHeight: 680)
+        // The configuration tab is the widest page; below this the root
+        // HStack overflows and the whole window content drifts left.
+        .frame(minWidth: 1120, minHeight: 680)
         .alert("未检测到 \(manager.selectedClient.desktopTitle)", isPresented: $showClientInstallPrompt) {
             Button("前往下载") {
                 manager.openSelectedDownloadPage()
@@ -3182,6 +3211,7 @@ struct StatusTab: View {
             }
             .padding(28)
         }
+        .pageContent()
     }
 
     private var instanceStatusText: String {
@@ -3516,8 +3546,16 @@ struct ConfigurationTab: View {
     @State private var selectedProfileId: UUID?
     @State private var isNewProfile = false
 
+    // Switching tabs rebuilds this view, so the state starts empty again.
+    // Resolving the fallback here instead of in onAppear means the first
+    // frame already shows the editor, rather than the placeholder that then
+    // gets swapped out a frame later — which read as the page jumping.
+    private var effectiveProfileId: UUID? {
+        selectedProfileId ?? manager.sharedActiveProfileId ?? manager.sharedProfiles.first?.id
+    }
+
     var selectedProfile: ConfigProfile? {
-        manager.sharedProfiles.first { $0.id == selectedProfileId }
+        manager.sharedProfiles.first { $0.id == effectiveProfileId }
     }
 
     var body: some View {
@@ -3553,18 +3591,6 @@ struct ConfigurationTab: View {
                             .foregroundColor(.secondary)
                     }
                     Spacer()
-                    Button(action: {
-                        isNewProfile = true
-                        selectedProfileId = nil
-                    }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .bold))
-                            .frame(width: 26, height: 26)
-                            .background(AppTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(AppTheme.accent)
-                    .help("新建配置")
                 }
                 .padding(14)
 
@@ -3576,7 +3602,7 @@ struct ConfigurationTab: View {
                             ProfileRow(
                                 profile: profile,
                                 isActive: manager.sharedActiveProfileId == profile.id,
-                                isSelected: selectedProfileId == profile.id
+                                isSelected: !isNewProfile && effectiveProfileId == profile.id
                             )
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -3687,11 +3713,10 @@ struct ConfigurationTab: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .padding(28)
-        .frame(maxWidth: 1_480, maxHeight: .infinity, alignment: .topLeading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .pageContent()
         .onAppear {
             if selectedProfileId == nil && !isNewProfile {
-                selectedProfileId = manager.sharedActiveProfileId ?? manager.sharedProfiles.first?.id
+                selectedProfileId = effectiveProfileId
             }
         }
     }
@@ -3775,6 +3800,9 @@ struct ProfileEditor: View {
     @State private var showApiKey = false
     @State private var proxyMode: String = "localProxy"
     @State private var ccSwitchUrl: String = ConfigProfile.defaultCcSwitchUrl
+    // Everything most users never touch lives behind one collapsed group.
+    // It opens by itself for a profile that already deviates from defaults.
+    @State private var showAdvanced = false
     // Snapshot of the normalized draft at load/save time, used to detect
     // unsaved edits so the save button can gray out when nothing changed.
     @State private var savedDraft: ConfigProfile?
@@ -3837,22 +3865,8 @@ struct ProfileEditor: View {
 
             ConfigField(title: "配置名称", prompt: "如：Coding Plan", text: $name)
 
-            VStack(alignment: .leading, spacing: 6) {
-                fieldLabel("代理模式")
-                Picker("", selection: $proxyMode) {
-                    Text("本地代理").tag("localProxy")
-                    Text("CC Switch").tag("ccSwitch")
-                    Text("直连").tag("direct")
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-            }
-
             modeFields
-            ConfigField(title: "出站主机白名单", prompt: "* 表示允许所有，多个用逗号分隔", text: $allowedHosts)
-            Text("同一配置同时供 Claude 和 Codex 使用；Codex 上游需兼容 OpenAI Responses API。")
-                .font(.system(size: 11))
-                .foregroundColor(AppTheme.muted)
+            advancedSettings
         }
         .padding(15)
         .background(AppTheme.surfaceSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -3869,20 +3883,14 @@ struct ProfileEditor: View {
                 .foregroundColor(AppTheme.muted)
         } else {
             ConfigField(
-                title: "Claude API Base URL（Anthropic）",
+                title: "API Base URL（Claude / Anthropic）",
                 prompt: "https://api.example.com/apps/anthropic",
                 text: $claudeApiBaseUrl
             )
-            ConfigField(
-                title: "Codex API Base URL（OpenAI）",
-                prompt: "https://api.example.com/v1",
-                text: $codexApiBaseUrl
-            )
-            Text("Claude 使用 /v1/messages，Codex 使用 /v1/responses；两个端点必须分别兼容对应协议。")
+            Text("Claude 使用 /v1/messages；Codex 端点、代理模式、端口等在下方「高级设置」里调整。")
                 .font(.system(size: 11))
                 .foregroundColor(AppTheme.muted)
             apiKeyField
-            authSchemeField
             if proxyMode == "direct" {
                 ConfigField(
                     title: "Claude 实际请求模型",
@@ -3893,10 +3901,59 @@ struct ProfileEditor: View {
             } else {
                 modelMappingEditor
             }
-            if proxyMode == "localProxy" {
-                proxyPortField
-            }
         }
+    }
+
+    private var advancedSettings: some View {
+        DisclosureGroup(isExpanded: $showAdvanced) {
+            VStack(alignment: .leading, spacing: 15) {
+                VStack(alignment: .leading, spacing: 6) {
+                    fieldLabel("代理模式")
+                    Picker("", selection: $proxyMode) {
+                        Text("本地代理").tag("localProxy")
+                        Text("CC Switch").tag("ccSwitch")
+                        Text("直连").tag("direct")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+
+                if proxyMode != "ccSwitch" {
+                    ConfigField(
+                        title: "Codex API Base URL（OpenAI）",
+                        prompt: "https://api.example.com/v1",
+                        text: $codexApiBaseUrl
+                    )
+                    Text("只用 Claude Desktop 可以留空；Codex 使用 /v1/responses，上游需兼容 OpenAI Responses API。")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppTheme.muted)
+                    authSchemeField
+                }
+
+                if proxyMode == "localProxy" {
+                    proxyPortField
+                }
+
+                ConfigField(title: "出站主机白名单", prompt: "* 表示允许所有，多个用逗号分隔", text: $allowedHosts)
+            }
+            .padding(.top, 12)
+        } label: {
+            Label("高级设置", systemImage: "slider.horizontal.3")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(AppTheme.inkSecondary)
+        }
+    }
+
+    // A profile that already differs from the defaults would otherwise hide
+    // its own settings behind a collapsed group the user never opens.
+    private var advancedDiffersFromDefaults: Bool {
+        if proxyMode != "localProxy" { return true }
+        if authScheme != "bearer" { return true }
+        if !codexApiBaseUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        let hosts = allowedHosts.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !hosts.isEmpty && hosts != "*" { return true }
+        if manager.proxyPort != 3456 || manager.codexProxyPort != 3460 { return true }
+        return false
     }
 
     private var modelMappingEditor: some View {
@@ -4018,19 +4075,36 @@ struct ProfileEditor: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    // Plain HStack rows rather than a Grid: Grid sizes every column to its
+    // content, which left the request-model field narrow with dead space at
+    // the trailing edge. Here that field is the only flexible cell, so it
+    // absorbs whatever width the card has left.
+    // Fixed side columns, so the one flexible cell (the request model field)
+    // keeps every point the card has left instead of splitting it evenly
+    // with another flexible column.
+    private let mappingDisplayNameWidth: CGFloat = 180
+    private let mappingOneMillionWidth: CGFloat = 46
+
+    private var hasCustomMapping: Bool {
+        modelMappings.contains(where: \.isCustom)
+    }
+
     private var claudeModelMappingGrid: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
-                GridRow {
-                    mappingHeader("模型角色", width: 90)
-                    mappingHeader("显示名称")
-                    mappingHeader("实际请求模型")
-                    mappingHeader("声明支持 1M", width: 94)
-                    mappingHeader("", width: 24)
+            HStack(spacing: 10) {
+                mappingHeader("模型角色", width: 90)
+                mappingHeader("显示名称", width: mappingDisplayNameWidth)
+                mappingHeader("实际请求模型")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                mappingHeader("1M", width: mappingOneMillionWidth)
+                    .help("声明该模型支持 1M 上下文")
+                if hasCustomMapping {
+                    Color.clear.frame(width: 24, height: 1)
                 }
+            }
 
             ForEach($modelMappings) { $mapping in
-                GridRow {
+                HStack(spacing: 10) {
                     Text(mapping.role)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(AppTheme.inkSecondary)
@@ -4045,7 +4119,8 @@ struct ProfileEditor: View {
                             .font(.system(size: 12))
                             .foregroundColor(AppTheme.muted)
                             .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                            .frame(width: mappingDisplayNameWidth, alignment: .leading)
+                            .frame(minHeight: 34, alignment: .leading)
                             .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppTheme.border, lineWidth: 1))
                     } else {
@@ -4053,7 +4128,7 @@ struct ProfileEditor: View {
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12))
                             .controlSize(.large)
-                            .frame(minWidth: 100, maxWidth: .infinity)
+                            .frame(width: mappingDisplayNameWidth)
                     }
 
                     HStack(spacing: 6) {
@@ -4061,32 +4136,34 @@ struct ProfileEditor: View {
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12))
                             .controlSize(.large)
+                            .frame(minWidth: 120, maxWidth: .infinity)
                         fetchedModelMenu($mapping.requestModel)
                     }
-                    .frame(minWidth: 100, maxWidth: .infinity)
+                    .frame(maxWidth: .infinity)
 
                     Toggle("1M", isOn: $mapping.supportsOneMillion)
                         .toggleStyle(.checkbox)
                         .font(.system(size: 12))
-                        .frame(width: 94, alignment: .leading)
+                        .frame(width: mappingOneMillionWidth, alignment: .leading)
 
-                    if mapping.isCustom {
-                        Button(action: { removeCustomMapping(role: mapping.role) }) {
-                            Image(systemName: "minus.circle")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(AppTheme.danger)
+                    if hasCustomMapping {
+                        if mapping.isCustom {
+                            Button(action: { removeCustomMapping(role: mapping.role) }) {
+                                Image(systemName: "minus.circle")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(AppTheme.danger)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(width: 24)
+                            .help("删除该映射")
+                        } else {
+                            Color.clear.frame(width: 24, height: 1)
                         }
-                        .buttonStyle(.plain)
-                        .frame(width: 24)
-                        .help("删除该映射")
-                    } else {
-                        Color.clear.frame(width: 24, height: 1)
                     }
                 }
             }
-            }
-
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var codexModelCatalogEditor: some View {
@@ -4193,7 +4270,7 @@ struct ProfileEditor: View {
             ModelMapping(
                 role: "自定义 \(index)",
                 displayName: "",
-                requestModel: fallback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? ConfigProfile.defaultUpstreamModel : fallback,
+                requestModel: fallback.trimmingCharacters(in: .whitespacesAndNewlines),
                 supportsOneMillion: false
             )
         )
@@ -4565,15 +4642,17 @@ struct ProfileEditor: View {
             apiKey = ""
             showApiKey = false
             authScheme = "bearer"
-            modelName = ConfigProfile.defaultUpstreamModel
-            modelMappings = defaultModelMappings(upstreamModel: ConfigProfile.defaultUpstreamModel)
-            codexDisplayName = ConfigProfile.defaultUpstreamModel
-            codexRequestModel = ConfigProfile.defaultUpstreamModel
+            // A new profile has no idea which upstream model IDs the provider
+            // offers, so the request-model fields stay blank for the user.
+            modelName = ""
+            modelMappings = defaultModelMappings(upstreamModel: "")
+            codexDisplayName = ""
+            codexRequestModel = ""
             codexExtraMappings = []
             codexCatalogModels = [CodexCatalogModel(
                 id: UUID(),
-                displayName: ConfigProfile.defaultUpstreamModel,
-                requestModel: ConfigProfile.defaultUpstreamModel,
+                displayName: "",
+                requestModel: "",
                 reasoningLevel: ""
             )]
             selectedMappingClient = .claude
@@ -4585,6 +4664,7 @@ struct ProfileEditor: View {
         }
         claudeProxyPort = String(manager.proxyPort)
         codexProxyPort = String(manager.codexProxyPort)
+        showAdvanced = !isNew && advancedDiffersFromDefaults
         savedDraft = draftProfile
         showSavedFeedback = false
     }
@@ -4813,6 +4893,7 @@ struct AboutTab: View {
             }
             .padding(28)
         }
+        .pageContent()
     }
 }
 
@@ -5075,6 +5156,7 @@ struct LogsTab: View {
             }
         }
         .padding(28)
+        .pageContent()
     }
 }
 
