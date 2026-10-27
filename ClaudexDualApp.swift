@@ -3483,7 +3483,7 @@ struct DeveloperModeStatusCard: View {
             Button(action: manager.enableDeveloperMode) {
                 Label(manager.selectedIsEnvironmentReady ? "已就绪" : "一键初始化", systemImage: manager.selectedIsEnvironmentReady ? "checkmark" : "power")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(manager.selectedIsEnvironmentReady ? .white : AppTheme.surface)
                     .frame(width: 120, height: 40)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
